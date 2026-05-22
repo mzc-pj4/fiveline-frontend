@@ -26,30 +26,33 @@ export default function Login() {
   }
 
   return (
-    <div className="max-w-sm mx-auto bg-white p-6 rounded shadow">
-      <h2 className="text-xl font-bold mb-4">로그인</h2>
-      <form onSubmit={handleSubmit} className="space-y-3">
+    <div className="auth-wrap">
+      <section className="auth-card surface">
+      <p className="eyebrow">Account</p>
+      <h1 className="page-title">로그인</h1>
+      <form onSubmit={handleSubmit} className="auth-form" style={{ marginTop: 20 }}>
         <input
           type="email" placeholder="이메일" value={email}
           onChange={(e) => setEmail(e.target.value)} required
-          className="w-full border rounded px-3 py-2"
+          className="field"
         />
         <input
           type="password" placeholder="비밀번호" value={password}
           onChange={(e) => setPassword(e.target.value)} required
-          className="w-full border rounded px-3 py-2"
+          className="field"
         />
-        {error && <p className="text-red-600 text-sm">{error}</p>}
+        {error && <p className="toast error">{error}</p>}
         <button
           type="submit" disabled={loading}
-          className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700 disabled:opacity-50"
+          className="btn btn-primary btn-full"
         >
           {loading ? "로그인 중..." : "로그인"}
         </button>
       </form>
-      <p className="text-sm text-gray-500 mt-4 text-center">
-        계정 없어요? <Link to="/signup" className="text-indigo-600 hover:underline">회원가입</Link>
+      <p className="small muted" style={{ marginTop: 18, textAlign: "center" }}>
+        계정이 없으신가요? <Link to="/signup" style={{ color: "#195b63", fontWeight: 800 }}>회원가입</Link>
       </p>
+      </section>
     </div>
   );
 }

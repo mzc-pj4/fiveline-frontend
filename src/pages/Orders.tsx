@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Order, orderApi } from "../api";
 
 export default function Orders() {
@@ -12,50 +13,77 @@ export default function Orders() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <p className="text-gray-500">불러오는 중...</p>;
-  if (orders.length === 0) return <p className="text-gray-500">주문 내역이 없습니다.</p>;
+  if (loading) return <div className="loading-state surface">주문 내역을 불러오는 중입니다.</div>;
+  if (orders.length === 0) {
+    return (
+      <div>
+        <div className="page-head">
+          <div>
+            <p className="eyebrow">Orders</p>
+            <h1 className="page-title">내 주문 내역</h1>
+          </div>
+        </div>
+        <div className="empty-state surface">주문 내역이 없습니다.</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-3">
-      <h2 className="text-2xl font-bold">내 주문 내역</h2>
+    <div>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Orders</p>
+          <h1 className="page-title">내 주문 내역</h1>
+          <p className="page-copy">주문 생성 결과와 응답 시간을 확인합니다.</p>
+        </div>
+        <span className="badge">{orders.length} orders</span>
+      </div>
+      <div style={{ display: "grid", gap: 12 }}>
       {orders.map((o) => (
-        <div key={o.id} className="bg-white rounded shadow p-4">
-          <div className="flex items-center justify-between">
+        <article key={o.id} className="order-card surface">
+          <div className="order-head">
             <div>
-              <span className="font-semibold">주문 #{o.id}</span>
+              <strong>
+                <Link to={`/orders/${o.id}`} className="order-link">
+                  주문 #{o.id}
+                </Link>
+              </strong>
               <span
-                className={`ml-3 text-xs px-2 py-1 rounded ${
-                  o.status === "SUCCESS"
-                    ? "bg-emerald-100 text-emerald-800"
-                    : "bg-red-100 text-red-800"
-                }`}
+                className={o.status === "SUCCESS" ? "status success" : "status fail"}
+                style={{ marginLeft: 10 }}
               >
                 {o.status}
               </span>
               {o.error_code && (
-                <span className="ml-2 text-xs text-red-600">({o.error_code})</span>
+                <span className="small" style={{ color: "#EF4444", marginLeft: 8 }}>({o.error_code})</span>
               )}
             </div>
             <div className="text-right">
-              <p className="font-semibold">{Number(o.total_price).toLocaleString()}원</p>
-              <p className="text-xs text-gray-500">
+              <strong>{Number(o.total_price).toLocaleString()}원</strong>
+              <p className="small muted">
                 {new Date(o.created_at).toLocaleString()}
               </p>
               {o.response_time_ms !== null && (
-                <p className="text-xs text-gray-400">응답 {o.response_time_ms}ms</p>
+                <p className="small muted">응답 {o.response_time_ms}ms</p>
               )}
+              <p className="small">
+                <Link to={`/orders/${o.id}`} className="order-link">
+                  상세 보기
+                </Link>
+              </p>
             </div>
           </div>
-          <ul className="mt-3 text-sm text-gray-700">
+          <ul className="order-items">
             {o.items.map((it) => (
-              <li key={it.id} className="border-t pt-2 mt-2 flex justify-between">
+              <li key={it.id}>
                 <span>상품 #{it.product_id} × {it.quantity}</span>
                 <span>{Number(it.price).toLocaleString()}원</span>
               </li>
             ))}
           </ul>
-        </div>
+        </article>
       ))}
+      </div>
     </div>
   );
 }

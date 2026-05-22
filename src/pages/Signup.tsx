@@ -28,35 +28,38 @@ export default function Signup() {
   }
 
   return (
-    <div className="max-w-sm mx-auto bg-white p-6 rounded shadow">
-      <h2 className="text-xl font-bold mb-4">회원가입</h2>
-      <form onSubmit={handleSubmit} className="space-y-3">
+    <div className="auth-wrap">
+      <section className="auth-card surface">
+      <p className="eyebrow">Account</p>
+      <h1 className="page-title">회원가입</h1>
+      <form onSubmit={handleSubmit} className="auth-form" style={{ marginTop: 20 }}>
         <input
           type="email" placeholder="이메일" value={email}
           onChange={(e) => setEmail(e.target.value)} required
-          className="w-full border rounded px-3 py-2"
+          className="field"
         />
         <input
           type="password" placeholder="비밀번호 (8자 이상)" value={password}
           onChange={(e) => setPassword(e.target.value)} required minLength={8}
-          className="w-full border rounded px-3 py-2"
+          className="field"
         />
         <input
           type="text" placeholder="이름" value={name}
           onChange={(e) => setName(e.target.value)} required
-          className="w-full border rounded px-3 py-2"
+          className="field"
         />
-        {error && <p className="text-red-600 text-sm">{error}</p>}
+        {error && <p className="toast error">{error}</p>}
         <button
           type="submit" disabled={loading}
-          className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700 disabled:opacity-50"
+          className="btn btn-primary btn-full"
         >
           {loading ? "가입 중..." : "회원가입"}
         </button>
       </form>
-      <p className="text-sm text-gray-500 mt-4 text-center">
-        이미 계정 있어요? <Link to="/login" className="text-indigo-600 hover:underline">로그인</Link>
+      <p className="small muted" style={{ marginTop: 18, textAlign: "center" }}>
+        이미 계정이 있으신가요? <Link to="/login" style={{ color: "#195b63", fontWeight: 800 }}>로그인</Link>
       </p>
+      </section>
     </div>
   );
 }
