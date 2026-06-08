@@ -1,9 +1,9 @@
 import axios, { AxiosInstance } from "axios";
 import { clearSession, getToken } from "./auth";
 
-const USER_SERVICE = "http://localhost:8001";
-const PRODUCT_SERVICE = "http://localhost:8002";
-const ORDER_SERVICE = "http://localhost:8003";
+const USER_URL    = "http://localhost:9001";
+const PRODUCT_URL = "http://localhost:8002";
+const ORDER_URL   = "http://localhost:8003";
 
 function attachAuth(client: AxiosInstance): AxiosInstance {
   client.interceptors.request.use((config) => {
@@ -17,32 +17,37 @@ function attachAuth(client: AxiosInstance): AxiosInstance {
   client.interceptors.response.use(
     (r) => r,
     (err) => {
-      if (err.response?.status === 401) {
-        clearSession();
-      }
+      if (err.response?.status === 401) clearSession();
       return Promise.reject(err);
     }
   );
   return client;
 }
 
-export const userApi = attachAuth(axios.create({ baseURL: USER_SERVICE }));
-export const productApi = attachAuth(axios.create({ baseURL: PRODUCT_SERVICE }));
-export const orderApi = attachAuth(axios.create({ baseURL: ORDER_SERVICE }));
+export const userApi    = attachAuth(axios.create({ baseURL: USER_URL }));
+export const productApi = attachAuth(axios.create({ baseURL: PRODUCT_URL }));
+export const orderApi   = attachAuth(axios.create({ baseURL: ORDER_URL }));
 
 export type Product = {
   id: number;
   name: string;
   description?: string | null;
   category: string;
+  brand?: string | null;
   price: number;
-  stock_quantity: number;
+  original_price?: number | null;
+  stock_quantity?: number;
   image_url?: string | null;
   average_rating?: number | null;
   review_count?: number;
 };
 
-export type ProductList = { items: Product[]; total: number };
+export type ProductList = {
+  items: Product[];
+  total: number;
+  page: number;
+  size: number;
+};
 
 export type CartItem = {
   id: number;
@@ -55,7 +60,7 @@ export type CartItem = {
 
 export type CartView = { items: CartItem[]; total_price: number };
 
-export type OrderItem = { id: number; product_id: number; quantity: number; price: number };
+export type OrderItem = { id: number; product_id: number; product_name: string | null; quantity: number; price: number };
 export type Order = {
   id: number;
   user_id: number;
@@ -65,4 +70,13 @@ export type Order = {
   response_time_ms: number | null;
   created_at: string;
   items: OrderItem[];
+};
+
+export type UserProfile = {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  phone: string | null;
+  created_at: string;
 };

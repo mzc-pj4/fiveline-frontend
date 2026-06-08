@@ -28,35 +28,67 @@ export default function Signup() {
   }
 
   return (
-    <div className="max-w-sm mx-auto bg-white p-6 rounded shadow">
-      <h2 className="text-xl font-bold mb-4">회원가입</h2>
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <input
-          type="email" placeholder="이메일" value={email}
-          onChange={(e) => setEmail(e.target.value)} required
-          className="w-full border rounded px-3 py-2"
-        />
-        <input
-          type="password" placeholder="비밀번호 (8자 이상)" value={password}
-          onChange={(e) => setPassword(e.target.value)} required minLength={8}
-          className="w-full border rounded px-3 py-2"
-        />
-        <input
-          type="text" placeholder="이름" value={name}
-          onChange={(e) => setName(e.target.value)} required
-          className="w-full border rounded px-3 py-2"
-        />
-        {error && <p className="text-red-600 text-sm">{error}</p>}
-        <button
-          type="submit" disabled={loading}
-          className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {loading ? "가입 중..." : "회원가입"}
-        </button>
-      </form>
-      <p className="text-sm text-gray-500 mt-4 text-center">
-        이미 계정 있어요? <Link to="/login" className="text-indigo-600 hover:underline">로그인</Link>
-      </p>
+    <div className="min-h-[calc(100vh-60px)] flex items-center justify-center" style={{ background: "#f5f5f5" }}>
+      <div className="w-full bg-white px-16 py-14" style={{ maxWidth: 560 }}>
+        {/* 타이틀 */}
+        <div className="text-center mb-10">
+          <p className="font-black text-2xl tracking-widest mb-2">FIVELINE</p>
+          <p className="text-sm" style={{ color: "#888" }}>회원가입하고 다양한 혜택을 누리세요.</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input
+            type="text"
+            placeholder="이름"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            className="w-full border px-4 py-4 text-sm outline-none transition-colors"
+            style={{ borderColor: "#ddd", borderRadius: 2 }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "#000")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "#ddd")}
+          />
+          <input
+            type="email"
+            placeholder="이메일"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="w-full border px-4 py-4 text-sm outline-none transition-colors"
+            style={{ borderColor: "#ddd", borderRadius: 2 }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "#000")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "#ddd")}
+          />
+          <input
+            type="password"
+            placeholder="비밀번호 (8자 이상)"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={8}
+            className="w-full border px-4 py-4 text-sm outline-none transition-colors"
+            style={{ borderColor: "#ddd", borderRadius: 2 }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "#000")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "#ddd")}
+          />
+          {error && <p className="text-red-500 text-sm">{error}</p>}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full text-white py-4 text-sm font-bold tracking-widest disabled:opacity-50 transition-colors mt-2"
+            style={{ background: loading ? "#555" : "#000", borderRadius: 2 }}
+          >
+            {loading ? "가입 중..." : "회원가입"}
+          </button>
+        </form>
+
+        <div className="mt-8 text-center text-sm" style={{ color: "#aaa" }}>
+          이미 계정이 있으신가요?{" "}
+          <Link to="/login" className="font-medium underline" style={{ color: "#333" }}>
+            로그인
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }
