@@ -1,9 +1,10 @@
 import axios, { AxiosInstance } from "axios";
 import { clearSession, getToken } from "./auth";
 
-const USER_URL    = "http://localhost:9001";
-const PRODUCT_URL = "http://localhost:8002";
-const ORDER_URL   = "http://localhost:8003";
+const CF_URL      = "https://d330d0cjfkz4e7.cloudfront.net";
+const USER_URL    = CF_URL;
+const PRODUCT_URL = CF_URL;
+const ORDER_URL   = CF_URL;
 
 function attachAuth(client: AxiosInstance): AxiosInstance {
   client.interceptors.request.use((config) => {

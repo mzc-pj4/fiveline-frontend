@@ -31,7 +31,7 @@ export default function Home() {
         <p className="text-xs tracking-[0.4em] mb-4" style={{ color: "rgba(255,255,255,0.5)" }}>
           NEW SEASON 2026 S/S
         </p>
-        <h1 className="font-black text-5xl md:text-7xl tracking-[0.15em] mb-4" style={{ color: "#fff" }}>
+        <h1 className="font-black text-5xl tracking-[0.15em] mb-4" style={{ color: "#fff" }}>
           FIVELINE
         </h1>
         <p className="text-base mb-8" style={{ color: "rgba(255,255,255,0.6)" }}>
@@ -121,21 +121,24 @@ export function ProductCard({ product: p }: { product: Product }) {
         className="mb-2 overflow-hidden bg-gray-100"
         style={{ aspectRatio: "3/4" }}
       >
-        {p.image_url ? (
-          <img
-            src={p.image_url}
-            alt={p.name}
-            className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).style.display = "none";
-              (e.currentTarget.parentElement as HTMLElement).style.background = "#f3f4f6";
-            }}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center" style={{ background: "#f3f4f6" }}>
-            <span className="text-4xl text-gray-300">—</span>
-          </div>
-        )}
+        <img
+          src={p.image_url ?? ""}
+          alt={p.name}
+          className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
+          onError={(e) => {
+            const t = e.currentTarget as HTMLImageElement;
+            t.onerror = null;
+            t.style.display = "none";
+            const parent = t.parentElement;
+            if (parent && !parent.querySelector(".img-fallback")) {
+              const fb = document.createElement("div");
+              fb.className = "img-fallback";
+              fb.style.cssText = "width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f3f4f6;";
+              fb.innerHTML = `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="1.5"><path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.57a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.57a2 2 0 0 0-1.34-2.23z"/></svg><span style="font-size:11px;color:#bbb;margin-top:8px;text-align:center;padding:0 8px;">${(p.brand ?? "").slice(0, 15)}</span>`;
+              parent.appendChild(fb);
+            }
+          }}
+        />
       </div>
       {/* 정보 */}
       <p className="text-xs font-medium mb-0.5 tracking-wider" style={{ color: "#999" }}>{p.brand}</p>
