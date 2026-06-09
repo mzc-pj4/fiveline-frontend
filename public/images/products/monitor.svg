@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="640" viewBox="0 0 900 640" role="img" aria-label="4K 모니터">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7E22CE"/>
+      <stop offset="100%" stop-color="#FACC15"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="68%" cy="26%" r="48%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity=".48"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="22" stdDeviation="24" flood-color="#001629" flood-opacity=".26"/>
+    </filter>
+  </defs>
+  <rect width="900" height="640" fill="url(#bg)"/>
+  <rect width="900" height="640" fill="url(#glow)"/>
+  <g opacity=".16" fill="none" stroke="#fff" stroke-width="2">
+    <path d="M90 112h720M90 528h720M130 70v500M770 70v500"/>
+    <circle cx="742" cy="112" r="62"/>
+    <circle cx="145" cy="495" r="96"/>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="238" y="176" width="424" height="288" rx="34" fill="#fff" opacity=".94"/>
+    <rect x="276" y="216" width="348" height="134" rx="20" fill="#FAFAFA"/>
+    <path d="M318 392h264" stroke="#7E22CE" stroke-width="18" stroke-linecap="round"/>
+    <path d="M350 264h200" stroke="#FACC15" stroke-width="22" stroke-linecap="round"/>
+    <path d="M350 306h132" stroke="#7E22CE" stroke-width="16" stroke-linecap="round" opacity=".72"/>
+  </g>
+  <text x="64" y="84" fill="#fff" font-family="Arial, sans-serif" font-size="28" font-weight="700" opacity=".86">electronics</text>
+  <text x="64" y="552" fill="#fff" font-family="Arial, sans-serif" font-size="56" font-weight="900">4K 모니터</text>
+  <text x="66" y="596" fill="#ffffff" font-family="Arial, sans-serif" font-size="24" font-weight="700" opacity=".88">market cloud display</text>
+</svg>

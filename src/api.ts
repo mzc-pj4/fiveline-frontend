@@ -1,9 +1,10 @@
 import axios, { AxiosInstance } from "axios";
 import { clearSession, getToken } from "./auth";
 
-const USER_SERVICE = "http://localhost:8001";
-const PRODUCT_SERVICE = "http://localhost:8002";
-const ORDER_SERVICE = "http://localhost:8003";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+const USER_SERVICE = import.meta.env.VITE_USER_SERVICE_URL ?? API_BASE_URL;
+const PRODUCT_SERVICE = import.meta.env.VITE_PRODUCT_SERVICE_URL ?? API_BASE_URL;
+const ORDER_SERVICE = import.meta.env.VITE_ORDER_SERVICE_URL ?? API_BASE_URL;
 
 function attachAuth(client: AxiosInstance): AxiosInstance {
   client.interceptors.request.use((config) => {

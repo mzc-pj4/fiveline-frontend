@@ -24,47 +24,44 @@ export default function Cart() {
   async function updateQty(cartItemId: number, quantity: number) {
     if (quantity < 1) return;
     await orderApi.patch(`/api/cart/items/${cartItemId}`, { quantity });
+    window.dispatchEvent(new Event("market-cloud:cart-changed"));
     await load();
   }
 
   async function remove(cartItemId: number) {
     await orderApi.delete(`/api/cart/items/${cartItemId}`);
+    window.dispatchEvent(new Event("market-cloud:cart-changed"));
     await load();
   }
 
   async function checkout() {
     setOrdering(true);
-    setResult(null);
-    try {
-      const { data } = await orderApi.post<Order>("/api/orders/from-cart");
-      setResult(data);
-      await load();
-    } catch (err: any) {
-      setResult(null);
-      alert("주문 실패: " + (err.response?.data?.detail ?? err.message));
-    } finally {
-      setOrdering(false);
-    }
+    navigate("/checkout?cart=1");
   }
 
-  if (loading) return <p className="text-gray-500">불러오는 중...</p>;
+  if (loading) return <div className="loading-state surface">장바구니를 불러오는 중입니다.</div>;
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-bold">장바구니</h2>
+    <div>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Checkout</p>
+          <h1 className="page-title">장바구니</h1>
+          <p className="page-copy">주문 생성과 서비스 간 통신을 확인하는 테스트 플로우입니다.</p>
+        </div>
+      </div>
 
       {result && (
         <div
-          className={`p-4 rounded ${
-            result.status === "SUCCESS" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"
-          }`}
+          className={result.status === "SUCCESS" ? "toast" : "toast error"}
         >
           {result.status === "SUCCESS"
             ? `주문 성공 #${result.id} · ${Number(result.total_price).toLocaleString()}원 · 응답 ${result.response_time_ms}ms`
             : `주문 실패 #${result.id} · 사유: ${result.error_code}`}
           <button
             onClick={() => navigate("/orders")}
-            className="ml-3 text-sm underline"
+            className="nav-action"
+            style={{ marginLeft: 10 }}
           >
             주문 내역 보기
           </button>
@@ -72,39 +69,41 @@ export default function Cart() {
       )}
 
       {!cart || cart.items.length === 0 ? (
-        <p className="text-gray-500">장바구니가 비어 있습니다.</p>
+        <div className="empty-state surface">장바구니가 비어 있습니다.</div>
       ) : (
         <>
-          <div className="bg-white rounded shadow">
-            <table className="w-full">
-              <thead className="bg-gray-50 text-sm">
+          <div className="table-wrap surface">
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <th className="text-left px-4 py-2">상품</th>
-                  <th className="text-right px-4 py-2">단가</th>
-                  <th className="text-center px-4 py-2">수량</th>
-                  <th className="text-right px-4 py-2">합계</th>
-                  <th className="px-4 py-2"></th>
+                  <th>상품</th>
+                  <th className="text-right">단가</th>
+                  <th className="text-center">수량</th>
+                  <th className="text-right">합계</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {cart.items.map((it) => (
-                  <tr key={it.id} className="border-t">
-                    <td className="px-4 py-3">
+                  <tr key={it.id}>
+                    <td>
                       {it.product_name ?? `상품 #${it.product_id}`}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="text-right">
                       {it.product_price ? Number(it.product_price).toLocaleString() + "원" : "-"}
                     </td>
-                    <td className="px-4 py-3 text-center">
-                      <button onClick={() => updateQty(it.id, it.quantity - 1)} className="px-2">-</button>
-                      <span className="px-2">{it.quantity}</span>
-                      <button onClick={() => updateQty(it.id, it.quantity + 1)} className="px-2">+</button>
+                    <td className="text-center">
+                      <div className="mini-stepper">
+                        <button onClick={() => updateQty(it.id, it.quantity - 1)} aria-label="수량 줄이기">-</button>
+                        <span>{it.quantity}</span>
+                        <button onClick={() => updateQty(it.id, it.quantity + 1)} aria-label="수량 늘리기">+</button>
+                      </div>
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="text-right">
                       {it.line_total ? Number(it.line_total).toLocaleString() + "원" : "-"}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <button onClick={() => remove(it.id)} className="text-red-600 text-sm hover:underline">
+                    <td className="text-right">
+                      <button onClick={() => remove(it.id)} className="btn btn-danger" style={{ minHeight: 32 }}>
                         삭제
                       </button>
                     </td>
@@ -114,13 +113,13 @@ export default function Cart() {
             </table>
           </div>
 
-          <div className="flex items-center justify-between bg-white rounded shadow p-4">
-            <span className="text-lg">
+          <div className="summary-bar surface">
+            <span style={{ fontSize: 20, fontWeight: 850 }}>
               총 {Number(cart.total_price).toLocaleString()}원
             </span>
             <button
               onClick={checkout} disabled={ordering}
-              className="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700 disabled:opacity-50"
+              className="btn btn-primary"
             >
               {ordering ? "주문 중..." : "주문하기"}
             </button>
