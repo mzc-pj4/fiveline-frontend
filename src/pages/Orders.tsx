@@ -41,7 +41,7 @@ export default function Orders() {
         </div>
       ) : (
         <div className="space-y-4">
-          {orders.map((o) => (
+          {orders.map((o, idx) => (
             <div key={o.id} className="bg-white border" style={{ borderColor: "#eee" }}>
               {/* 주문 헤더 */}
               <div
@@ -50,7 +50,7 @@ export default function Orders() {
               >
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-bold" style={{ color: "#111" }}>
-                    주문 #{o.id}
+                    주문 #{orders.length - idx}
                   </span>
                   <span
                     className="text-xs px-2 py-0.5 font-medium rounded-sm"

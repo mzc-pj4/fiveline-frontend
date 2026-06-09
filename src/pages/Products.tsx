@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { ProductList, productApi } from "../api";
 import { ProductCard } from "./Home";
 
-const CATEGORIES = ["상의", "하의", "아우터", "원피스", "신발", "가방", "액세서리"];
+const CATEGORIES = ["상의", "하의", "아우터", "원피스/스커트", "신발", "가방", "소품"];
 const SORT_OPTIONS = [
   { value: "newest", label: "최신순" },
   { value: "price_asc", label: "낮은 가격순" },

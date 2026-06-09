@@ -1,10 +1,10 @@
 import axios, { AxiosInstance } from "axios";
 import { clearSession, getToken } from "./auth";
 
-const CF_URL      = "https://d330d0cjfkz4e7.cloudfront.net";
-const USER_URL    = CF_URL;
-const PRODUCT_URL = CF_URL;
-const ORDER_URL   = CF_URL;
+const BASE_URL    = import.meta.env.VITE_USE_PROXY === "true" ? "" : "https://d330d0cjfkz4e7.cloudfront.net";
+const USER_URL    = BASE_URL;
+const PRODUCT_URL = BASE_URL;
+const ORDER_URL   = BASE_URL;
 
 function attachAuth(client: AxiosInstance): AxiosInstance {
   client.interceptors.request.use((config) => {

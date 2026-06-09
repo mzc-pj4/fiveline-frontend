@@ -7,10 +7,17 @@ type Review = {
   id: number;
   product_id: number;
   user_id: number;
+  reviewer_name: string | null;
   rating: number;
   content: string;
   created_at: string;
 };
+
+function maskName(name: string | null | undefined): string {
+  if (!name || name.length < 2) return "익명";
+  if (name.length === 2) return name[0] + "*";
+  return name[0] + "*".repeat(name.length - 2) + name[name.length - 1];
+}
 
 
 export default function ProductDetail() {
@@ -259,7 +266,7 @@ export default function ProductDetail() {
                 <div className="flex items-center gap-2 mb-1">
                   <span style={{ color: "#f59e0b" }}>{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</span>
                   <span className="text-xs" style={{ color: "#bbb" }}>
-                    user #{r.user_id} · {new Date(r.created_at).toLocaleDateString("ko-KR")}
+                    {maskName(r.reviewer_name)} · {new Date(r.created_at).toLocaleDateString("ko-KR")}
                   </span>
                 </div>
                 <p className="text-sm" style={{ color: "#444" }}>{r.content}</p>
