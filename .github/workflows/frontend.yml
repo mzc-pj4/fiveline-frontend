@@ -10,7 +10,7 @@ on:
 env:
   AWS_REGION: ap-northeast-2
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
-  ECR_REPOSITORY: fiveline-ecr/frontend
+  ECR_REPOSITORY: fiveline/frontend
 
 permissions:
   id-token: write
@@ -152,7 +152,7 @@ jobs:
           cd fiveline_k8s_manifest
           BRANCH=deploy/frontend-${{ github.run_number }}
           git checkout -b $BRANCH
-          sed -i "s|fiveline-ecr/frontend:.*|fiveline-ecr/frontend:${IMAGE_TAG}|" frontend/frontend.yaml
+          sed -i "s|fiveline/frontend:.*|fiveline/frontend:${IMAGE_TAG}|" frontend/frontend.yaml
           git config user.email "github-actions@github.com"
           git config user.name "GitHub Actions"
           git add frontend/frontend.yaml
