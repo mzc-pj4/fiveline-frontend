@@ -1,0 +1,199 @@
+name: frontend CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
+  ECR_REPOSITORY: fiveline/frontend
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  test:
+    name: Install & Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+  sonarcloud:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            -Dsonar.organization=mzc-pj4
+            -Dsonar.projectKey=mzc-pj4_fiveline-frontend
+            -Dsonar.sources=src
+
+  dependency-check:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    needs: sonarcloud
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+
+  build-and-push:
+    name: Build & Push to ECR
+    runs-on: ubuntu-latest
+    needs: dependency-check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        env:
+          IMAGE_TAG: dev-${{ github.run_number }}-${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+  trivy-scan:
+    name: Trivy Image Scan
+    runs-on: ubuntu-latest
+    needs: build-and-push
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:dev-${{ github.run_number }}-${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          ignore-unfixed: true
+
+  update-manifest:
+    name: Update Manifest Repo
+    runs-on: ubuntu-latest
+    needs: trivy-scan
+    environment: production
+
+    steps:
+      - name: Update image tag and create PR
+        env:
+          IMAGE_TAG: dev-${{ github.run_number }}-${{ github.sha }}
+          GH_TOKEN: ${{ secrets.MANIFEST_REPO_TOKEN }}
+        run: |
+          git clone https://x-access-token:${{ secrets.MANIFEST_REPO_TOKEN }}@github.com/mzc-pj4/fiveline_k8s_manifest.git
+          cd fiveline_k8s_manifest
+          BRANCH=deploy/frontend-${{ github.run_number }}
+          git checkout -b $BRANCH
+          sed -i "s|fiveline/frontend:.*|fiveline/frontend:${IMAGE_TAG}|" frontend/frontend.yaml
+          git config user.email "github-actions@github.com"
+          git config user.name "GitHub Actions"
+          git add frontend/frontend.yaml
+          git commit -m "chore: update frontend image tag to ${IMAGE_TAG}"
+          git push origin $BRANCH
+          gh pr create \
+            --repo mzc-pj4/fiveline_k8s_manifest \
+            --title "chore: update frontend image tag to ${IMAGE_TAG}" \
+            --body "자동 생성된 PR입니다.\n\n서비스: frontend\n이미지 태그: ${IMAGE_TAG}\n실행자: ${{ github.actor }}" \
+            --base main \
+            --head $BRANCH
+
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    needs: update-manifest
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Slack 알림
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "${{ needs.update-manifest.result == 'success' && '✅' || '❌' }} *frontend 배포 ${{ needs.update-manifest.result == 'success' && '성공' || '실패' }}*\n브랜치: ${{ github.head_ref || github.ref_name }}\n실행자: ${{ github.actor }}\n커밋: ${{ github.sha }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: 이메일 알림
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "${{ needs.update-manifest.result == 'success' && '✅' || '❌' }} frontend 배포 ${{ needs.update-manifest.result == 'success' && '성공' || '실패' }}"
+          to: ${{ secrets.EMAIL_USERNAME }}
+          from: ${{ secrets.EMAIL_USERNAME }}
+          body: |
+            브랜치: ${{ github.ref_name }}
+            실행자: ${{ github.actor }}
+            커밋: ${{ github.sha }}
+            결과: ${{ needs.update-manifest.result }}
