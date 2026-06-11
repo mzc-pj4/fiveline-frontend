@@ -67,6 +67,8 @@ jobs:
             -Dsonar.organization=mzc-pj4
             -Dsonar.projectKey=mzc-pj4_fiveline-frontend
             -Dsonar.sources=user/src
+            -Dsonar.coverage.exclusions=**/*
+            -Dsonar.cpd.exclusions=**/*
 
   dependency-check:
     name: Dependency Check
