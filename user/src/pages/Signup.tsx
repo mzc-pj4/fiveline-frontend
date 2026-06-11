@@ -8,6 +8,7 @@ export default function Signup() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -16,7 +17,7 @@ export default function Signup() {
     setError(null);
     setLoading(true);
     try {
-      const { data } = await userApi.post("/api/auth/signup", { email, password, name });
+      const { data } = await userApi.post("/api/auth/signup", { email, password, name, phone: phone || null });
       setSession(data.access_token, data.user);
       navigate("/products");
     } catch (err: any) {
@@ -66,6 +67,16 @@ export default function Signup() {
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={8}
+            className="w-full border px-4 py-4 text-sm outline-none transition-colors"
+            style={{ borderColor: "#ddd", borderRadius: 2 }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "#000")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "#ddd")}
+          />
+          <input
+            type="tel"
+            placeholder="전화번호 (선택, 예: 010-1234-5678)"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
             className="w-full border px-4 py-4 text-sm outline-none transition-colors"
             style={{ borderColor: "#ddd", borderRadius: 2 }}
             onFocus={(e) => (e.currentTarget.style.borderColor = "#000")}

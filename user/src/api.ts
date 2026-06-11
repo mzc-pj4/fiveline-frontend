@@ -1,7 +1,7 @@
 import axios, { AxiosInstance } from "axios";
 import { clearSession, getToken } from "./auth";
 
-const BASE_URL    = import.meta.env.VITE_USE_PROXY === "true" ? "" : "https://d330d0cjfkz4e7.cloudfront.net";
+const BASE_URL    = import.meta.env.VITE_USE_PROXY === "true" ? "" : "https://fiveline.store";
 const USER_URL    = BASE_URL;
 const PRODUCT_URL = BASE_URL;
 const ORDER_URL   = BASE_URL;
@@ -81,3 +81,4 @@ export type UserProfile = {
   phone: string | null;
   created_at: string;
 };
+

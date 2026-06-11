@@ -72,7 +72,7 @@ export default function Orders() {
                     {Number(o.total_price).toLocaleString()}원
                   </p>
                   <p className="text-xs mt-0.5" style={{ color: "#aaa" }}>
-                    {new Date(o.created_at).toLocaleString("ko-KR")}
+                    {new Date(o.created_at.includes('+') || o.created_at.endsWith('Z') ? o.created_at : o.created_at + 'Z').toLocaleString("ko-KR")}
                   </p>
                   {o.response_time_ms !== null && (
                     <p className="text-xs" style={{ color: "#ccc" }}>

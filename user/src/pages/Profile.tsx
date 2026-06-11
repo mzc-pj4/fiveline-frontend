@@ -102,7 +102,7 @@ export default function Profile() {
             <InfoRow label="이름" value={profile.name} />
             <InfoRow label="이메일" value={profile.email} />
             <InfoRow label="연락처" value={profile.phone ?? "미등록"} />
-            <InfoRow label="가입일" value={new Date(profile.created_at).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" })} />
+            <InfoRow label="가입일" value={new Date(profile.created_at.includes('+') || profile.created_at.endsWith('Z') ? profile.created_at : profile.created_at + 'Z').toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" })} />
             <button
               onClick={() => setEditing(true)}
               className="mt-4 w-full py-3 font-bold text-sm rounded-sm transition-colors"

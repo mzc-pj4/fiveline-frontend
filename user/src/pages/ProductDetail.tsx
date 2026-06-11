@@ -78,7 +78,14 @@ export default function ProductDetail() {
       await load();
       showToast("리뷰가 작성되었습니다");
     } catch (err: any) {
-      showToast("리뷰 작성 실패: " + (err.response?.data?.detail ?? err.message));
+      const status = err.response?.status;
+      if (status === 403) {
+        showToast("구매한 상품에만 리뷰를 작성할 수 있습니다");
+      } else if (status === 409) {
+        showToast("이미 해당 상품에 리뷰를 작성하셨습니다");
+      } else {
+        showToast(err.response?.data?.detail ?? err.message);
+      }
     } finally {
       setSubmitting(false);
     }

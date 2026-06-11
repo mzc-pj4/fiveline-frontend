@@ -15,8 +15,8 @@ export default function Layout() {
 
   useEffect(() => {
     if (!authed) { setCartCount(0); return; }
-    orderApi.get("/api/cart/items").then(({ data }) => {
-      setCartCount(data.items?.length ?? 0);
+    orderApi.get("/api/cart").then((res) => {
+      setCartCount(res.data.items?.length ?? 0);
     }).catch(() => {});
   }, [authed]);
 
