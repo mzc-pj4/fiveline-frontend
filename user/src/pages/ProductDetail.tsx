@@ -16,7 +16,7 @@ type Review = {
 function maskName(name: string | null | undefined): string {
   if (!name || name.length < 2) return "익명";
   if (name.length === 2) return name[0] + "*";
-  return name[0] + "*".repeat(name.length - 2) + name[name.length - 1];
+  return name[0] + "*".repeat(name.length - 2) + (name.at(-1) ?? "");
 }
 
 
@@ -193,7 +193,7 @@ export default function ProductDetail() {
           {/* 수량 + 장바구니 */}
           <div className="border-t pt-6" style={{ borderColor: "#f3f4f6" }}>
             <div className="flex items-center gap-3 mb-4">
-              <label className="text-sm font-medium" style={{ color: "#555" }}>수량</label>
+              <span className="text-sm font-medium" style={{ color: "#555" }}>수량</span>
               <div className="flex items-center border rounded" style={{ borderColor: "#ddd" }}>
                 <button
                   onClick={() => setQuantity(Math.max(1, quantity - 1))}
@@ -231,7 +231,7 @@ export default function ProductDetail() {
         {isAuthenticated() ? (
           <form onSubmit={handleReview} className="mb-8 p-4 rounded-xl" style={{ background: "#fafafa", border: "1px solid #f0f0f0" }}>
             <div className="flex items-center gap-3 mb-3">
-              <label className="text-sm font-medium" style={{ color: "#555" }}>별점</label>
+              <span className="text-sm font-medium" style={{ color: "#555" }}>별점</span>
               <div className="flex gap-1">
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button key={n} type="button" onClick={() => setRating(n)} className="text-xl">

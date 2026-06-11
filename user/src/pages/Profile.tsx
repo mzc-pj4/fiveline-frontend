@@ -54,8 +54,8 @@ export default function Profile() {
     <div className="max-w-lg mx-auto px-4 py-16 animate-pulse">
       <div className="h-8 bg-gray-200 rounded w-32 mb-6" />
       <div className="space-y-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-14 bg-gray-200 rounded-lg" />
+        {([1,2,3,4] as const).map((k) => (
+          <div key={k} className="h-14 bg-gray-200 rounded-lg" />
         ))}
       </div>
     </div>
@@ -97,27 +97,12 @@ export default function Profile() {
           </div>
         </div>
 
-        {!editing ? (
-          <div className="space-y-3">
-            <InfoRow label="이름" value={profile.name} />
-            <InfoRow label="이메일" value={profile.email} />
-            <InfoRow label="연락처" value={profile.phone ?? "미등록"} />
-            <InfoRow label="가입일" value={new Date(profile.created_at.includes('+') || profile.created_at.endsWith('Z') ? profile.created_at : profile.created_at + 'Z').toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" })} />
-            <button
-              onClick={() => setEditing(true)}
-              className="mt-4 w-full py-3 font-bold text-sm rounded-sm transition-colors"
-              style={{ background: "#000", color: "#fff" }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#222")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "#000")}
-            >
-              프로필 수정
-            </button>
-          </div>
-        ) : (
+        {editing ? (
           <form onSubmit={handleSave} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium mb-1.5" style={{ color: "#555" }}>이름</label>
+              <label htmlFor="profile-name" className="block text-xs font-medium mb-1.5" style={{ color: "#555" }}>이름</label>
               <input
+                id="profile-name"
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -129,8 +114,9 @@ export default function Profile() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium mb-1.5" style={{ color: "#555" }}>연락처</label>
+              <label htmlFor="profile-phone" className="block text-xs font-medium mb-1.5" style={{ color: "#555" }}>연락처</label>
               <input
+                id="profile-phone"
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
@@ -159,13 +145,29 @@ export default function Profile() {
               </button>
             </div>
           </form>
+        ) : (
+          <div className="space-y-3">
+            <InfoRow label="이름" value={profile.name} />
+            <InfoRow label="이메일" value={profile.email} />
+            <InfoRow label="연락처" value={profile.phone ?? "미등록"} />
+            <InfoRow label="가입일" value={new Date(profile.created_at.includes('+') || profile.created_at.endsWith('Z') ? profile.created_at : profile.created_at + 'Z').toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" })} />
+            <button
+              onClick={() => setEditing(true)}
+              className="mt-4 w-full py-3 font-bold text-sm rounded-sm transition-colors"
+              style={{ background: "#000", color: "#fff" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#222")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "#000")}
+            >
+              프로필 수정
+            </button>
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ label, value }: { readonly label: string; readonly value: string }) {
   return (
     <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: "#f5f5f5" }}>
       <span className="text-xs font-medium" style={{ color: "#aaa" }}>{label}</span>

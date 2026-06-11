@@ -22,7 +22,7 @@ export default function Layout() {
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      if (menuRef.current && e.target instanceof Node && !menuRef.current.contains(e.target)) {
         setShowUserMenu(false);
       }
     }
@@ -67,12 +67,7 @@ export default function Layout() {
 
           {/* 우측 아이콘 */}
           <div className="flex items-center gap-5 ml-auto">
-            {!authed ? (
-              <>
-                <Link to="/login" className="text-sm hover:text-gray-300" style={{ color: "rgba(255,255,255,0.8)" }}>로그인</Link>
-                <Link to="/signup" className="text-sm hover:text-gray-300" style={{ color: "rgba(255,255,255,0.8)" }}>회원가입</Link>
-              </>
-            ) : (
+            {authed ? (
               <div className="relative" ref={menuRef}>
                 <button
                   onClick={() => setShowUserMenu((v) => !v)}
@@ -100,6 +95,11 @@ export default function Layout() {
                   </div>
                 )}
               </div>
+            ) : (
+              <>
+                <Link to="/login" className="text-sm hover:text-gray-300" style={{ color: "rgba(255,255,255,0.8)" }}>로그인</Link>
+                <Link to="/signup" className="text-sm hover:text-gray-300" style={{ color: "rgba(255,255,255,0.8)" }}>회원가입</Link>
+              </>
             )}
 
             {/* 장바구니 */}

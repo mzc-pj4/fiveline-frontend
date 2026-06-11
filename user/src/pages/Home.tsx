@@ -87,8 +87,8 @@ export default function Home() {
           </div>
           {loading ? (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="animate-pulse">
+              {([1,2,3,4,5,6,7,8] as const).map((k) => (
+                <div key={k} className="animate-pulse">
                   <div className="aspect-[3/4] bg-gray-100 mb-2" />
                   <div className="h-3 bg-gray-100 rounded w-16 mb-1" />
                   <div className="h-4 bg-gray-100 rounded w-full mb-1" />
@@ -109,7 +109,7 @@ export default function Home() {
   );
 }
 
-export function ProductCard({ product: p }: { product: Product }) {
+export function ProductCard({ product: p }: { readonly product: Product }) {
   const discount = p.original_price
     ? Math.round((1 - Number(p.price) / Number(p.original_price)) * 100)
     : 0;
