@@ -35,7 +35,7 @@ export default function Home() {
           FIVELINE
         </h1>
         <p className="text-base mb-8" style={{ color: "rgba(255,255,255,0.6)" }}>
-          패션의 기준을 다시 세우다
+          패션의 기준을 다시 세우다.<div className=""></div>
         </p>
         <div className="flex gap-3">
           <button
