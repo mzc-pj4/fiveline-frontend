@@ -10,7 +10,7 @@ on:
 env:
   AWS_REGION: ap-northeast-2
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
-  ECR_REPOSITORY: fiveline/admin
+  ECR_REPOSITORY: fiveline/admin-service
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 permissions:
@@ -147,33 +147,27 @@ jobs:
           ignore-unfixed: true
 
   update-manifest:
-    name: Update Manifest Repo
+    name: Restart Admin Service
     runs-on: ubuntu-latest
     needs: trivy-scan
     environment: production
 
     steps:
-      - name: Update image tag and create PR
-        env:
-          IMAGE_TAG: dev-${{ github.run_number }}-${{ github.sha }}
-          GH_TOKEN: ${{ secrets.MANIFEST_REPO_TOKEN }}
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-northeast-2
+
+      - name: Restart admin-service pod via SSM
         run: |
-          git clone https://x-access-token:${{ secrets.MANIFEST_REPO_TOKEN }}@github.com/mzc-pj4/fiveline_k8s_manifest.git
-          cd fiveline_k8s_manifest
-          BRANCH=deploy/admin-${{ github.run_number }}
-          git checkout -b $BRANCH
-          sed -i "s|fiveline/admin:.*|fiveline/admin:${IMAGE_TAG}|" admin/admin.yaml
-          git config user.email "github-actions@github.com"
-          git config user.name "GitHub Actions"
-          git add admin/admin.yaml
-          git commit -m "chore: update admin image tag to ${IMAGE_TAG}"
-          git push origin $BRANCH
-          gh pr create \
-            --repo mzc-pj4/fiveline_k8s_manifest \
-            --title "chore: update admin image tag to ${IMAGE_TAG}" \
-            --body "자동 생성된 PR입니다.\n\n서비스: admin\n이미지 태그: ${IMAGE_TAG}\n실행자: ${{ github.actor }}" \
-            --base main \
-            --head $BRANCH
+          INSTANCE_ID="i-03293047560646fed"
+          aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=["sudo kubectl rollout restart deployment/admin-service -n fiveline --kubeconfig /root/.kube/config"]' \
+            --region ap-northeast-2 \
+            --output text
 
   notify:
     name: Notify
