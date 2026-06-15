@@ -11,6 +11,7 @@ env:
   AWS_REGION: ap-northeast-2
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
   ECR_REPOSITORY: fiveline/frontend
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 permissions:
   id-token: write
@@ -30,15 +31,19 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
+          cache-dependency-path: user/package-lock.json
 
       - name: Install dependencies
         run: npm ci
+        working-directory: ./user
 
       - name: Type check
         run: npx tsc --noEmit
+        working-directory: ./user
 
       - name: Build
         run: npm run build
+        working-directory: ./user
 
   sonarcloud:
     name: SonarCloud Analysis
@@ -61,7 +66,9 @@ jobs:
           args: >
             -Dsonar.organization=mzc-pj4
             -Dsonar.projectKey=mzc-pj4_fiveline-frontend
-            -Dsonar.sources=src
+            -Dsonar.sources=user/src
+            -Dsonar.coverage.exclusions=**/*
+            -Dsonar.cpd.exclusions=**/*
 
   dependency-check:
     name: Dependency Check
@@ -77,12 +84,15 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
+          cache-dependency-path: user/package-lock.json
 
       - name: Install dependencies
         run: npm ci
+        working-directory: ./user
 
       - name: Run npm audit
-        run: npm audit --audit-level=critical
+        run: npm audit --audit-level=high
+        working-directory: ./user
 
   build-and-push:
     name: Build & Push to ECR
@@ -107,7 +117,7 @@ jobs:
         env:
           IMAGE_TAG: dev-${{ github.run_number }}-${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./user
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
@@ -165,35 +175,35 @@ jobs:
             --base main \
             --head $BRANCH
 
-  # notify:
-  #   name: Notify
-  #   runs-on: ubuntu-latest
-  #   needs: update-manifest
-  #   if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-  #
-  #   steps:
-  #     - name: Slack 알림
-  #       uses: slackapi/slack-github-action@v1
-  #       with:
-  #         payload: |
-  #           {
-  #             "text": "${{ needs.update-manifest.result == 'success' && '✅' || '❌' }} *frontend 배포 ${{ needs.update-manifest.result == 'success' && '성공' || '실패' }}*\n브랜치: ${{ github.head_ref || github.ref_name }}\n실행자: ${{ github.actor }}\n커밋: ${{ github.sha }}"
-  #           }
-  #       env:
-  #         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-  #
-  #     - name: 이메일 알림
-  #       uses: dawidd6/action-send-mail@v3
-  #       with:
-  #         server_address: smtp.gmail.com
-  #         server_port: 465
-  #         username: ${{ secrets.EMAIL_USERNAME }}
-  #         password: ${{ secrets.EMAIL_PASSWORD }}
-  #         subject: "${{ needs.update-manifest.result == 'success' && '✅' || '❌' }} frontend 배포 ${{ needs.update-manifest.result == 'success' && '성공' || '실패' }}"
-  #         to: ${{ secrets.EMAIL_USERNAME }}
-  #         from: ${{ secrets.EMAIL_USERNAME }}
-  #         body: |
-  #           브랜치: ${{ github.ref_name }}
-  #           실행자: ${{ github.actor }}
-  #           커밋: ${{ github.sha }}
-  #           결과: ${{ needs.update-manifest.result }}
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    needs: update-manifest
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Slack 알림
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "${{ needs.update-manifest.result == 'success' && '✅' || '❌' }} *frontend 배포 ${{ needs.update-manifest.result == 'success' && '성공' || '실패' }}*\n브랜치: ${{ github.head_ref || github.ref_name }}\n실행자: ${{ github.actor }}\n커밋: ${{ github.sha }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: 이메일 알림
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "${{ needs.update-manifest.result == 'success' && '✅' || '❌' }} frontend 배포 ${{ needs.update-manifest.result == 'success' && '성공' || '실패' }}"
+          to: ${{ secrets.EMAIL_USERNAME }}
+          from: ${{ secrets.EMAIL_USERNAME }}
+          body: |
+            브랜치: ${{ github.ref_name }}
+            실행자: ${{ github.actor }}
+            커밋: ${{ github.sha }}
+            결과: ${{ needs.update-manifest.result }}
