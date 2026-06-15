@@ -479,11 +479,130 @@ const GRAFANA_DASHBOARDS = [
   },
 ];
 
+type SonarMeasure = { metric: string; value: string };
+type SonarProject = { name: string; key: string; measures: SonarMeasure[] };
+
+const SONAR_PROJECTS = [
+  { key: "mzc-pj4_fiveline-frontend", name: "Frontend" },
+  { key: "mzc-pj4_fiveline-backend", name: "Backend" },
+];
+const SONAR_METRICS = "alert_status,bugs,vulnerabilities,code_smells,security_rating";
+
+const SECURITY_GRADE: Record<string, string> = { "1": "A", "2": "B", "3": "C", "4": "D", "5": "E" };
+const SECURITY_COLOR: Record<string, string> = { "1": "#065f46", "2": "#166534", "3": "#92400e", "4": "#991b1b", "5": "#7f1d1d" };
+const SECURITY_BG: Record<string, string> = { "1": "#ecfdf5", "2": "#dcfce7", "3": "#fffbeb", "4": "#fef2f2", "5": "#fef2f2" };
+
+function useSonarCloud() {
+  const [projects, setProjects] = useState<SonarProject[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = import.meta.env.VITE_SONAR_TOKEN ?? "";
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+    Promise.all(
+      SONAR_PROJECTS.map((p) =>
+        fetch(`https://sonarcloud.io/api/measures/component?component=${p.key}&metricKeys=${SONAR_METRICS}`, { headers })
+          .then((r) => r.json())
+          .then((data) => ({ name: p.name, key: p.key, measures: data.component?.measures ?? [] }))
+          .catch(() => ({ name: p.name, key: p.key, measures: [] }))
+      )
+    )
+      .then(setProjects)
+      .finally(() => setLoading(false));
+  }, []);
+
+  return { projects, loading };
+}
+
+function SonarCloudSection() {
+  const { projects, loading } = useSonarCloud();
+
+  const getMeasure = (measures: SonarMeasure[], key: string) =>
+    measures.find((m) => m.metric === key)?.value ?? "-";
+
+  return (
+    <div className="bg-white border p-5" style={{ borderColor: "#e5e7eb" }}>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-bold" style={{ color: "#111" }}>🔍 코드 품질 (SonarCloud)</h3>
+        <a
+          href="https://sonarcloud.io/organizations/mzc-pj4/projects"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs px-3 py-1.5 border rounded-sm"
+          style={{ borderColor: "#ddd", color: "#555" }}
+        >
+          SonarCloud 전체 화면 ↗
+        </a>
+      </div>
+
+      {loading ? (
+        <p className="text-xs" style={{ color: "#bbb" }}>불러오는 중...</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {projects.map((p) => {
+            const gate = getMeasure(p.measures, "alert_status");
+            const bugs = getMeasure(p.measures, "bugs");
+            const vulns = getMeasure(p.measures, "vulnerabilities");
+            const smells = getMeasure(p.measures, "code_smells");
+            const secRating = getMeasure(p.measures, "security_rating");
+
+            return (
+              <div key={p.key} className="border p-4" style={{ borderColor: "#e5e7eb" }}>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-bold" style={{ color: "#111" }}>{p.name}</span>
+                  <span
+                    className="text-xs px-2 py-0.5 font-medium rounded-sm"
+                    style={{
+                      background: gate === "OK" ? "#ecfdf5" : gate === "-" ? "#f3f4f6" : "#fef2f2",
+                      color: gate === "OK" ? "#065f46" : gate === "-" ? "#999" : "#991b1b",
+                    }}
+                  >
+                    {gate === "OK" ? "✅ Passed" : gate === "-" ? "데이터 없음" : "❌ Failed"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  <div>
+                    <p className="text-lg font-black" style={{ color: "#111" }}>{bugs}</p>
+                    <p className="text-xs" style={{ color: "#999" }}>버그</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-black" style={{ color: "#111" }}>{vulns}</p>
+                    <p className="text-xs" style={{ color: "#999" }}>취약점</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-black" style={{ color: "#111" }}>{smells}</p>
+                    <p className="text-xs" style={{ color: "#999" }}>코드스멜</p>
+                  </div>
+                  <div>
+                    <span
+                      className="inline-block text-lg font-black px-2 rounded-sm"
+                      style={{
+                        color: SECURITY_COLOR[secRating] ?? "#999",
+                        background: SECURITY_BG[secRating] ?? "#f3f4f6",
+                      }}
+                    >
+                      {SECURITY_GRADE[secRating] ?? "-"}
+                    </span>
+                    <p className="text-xs" style={{ color: "#999" }}>보안등급</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MonitoringTab() {
   const [selected, setSelected] = useState(0);
 
   return (
     <div className="space-y-4">
+      <SonarCloudSection />
+
       <div className="flex items-center gap-2 flex-wrap">
         {GRAFANA_DASHBOARDS.map((d, i) => (
           <button
