@@ -14,8 +14,10 @@ type AdminOrder = { id: number; total_price: number; status: string; created_at:
 type AdminUser = { id: number; email: string; name: string; role: string; phone: string | null; created_at: string };
 type AdminProduct = { id: number; name: string; category: string; brand: string | null; price: number; stock_quantity: number };
 
-const TABS = ["대시보드", "주문관리", "사용자", "상품관리"] as const;
+const TABS = ["대시보드", "주문관리", "사용자", "상품관리", "모니터링"] as const;
 type Tab = typeof TABS[number];
+
+const GRAFANA_URL = "http://a57ca6c023f7c4c288f6c35d58822123-814020370.ap-northeast-2.elb.amazonaws.com";
 
 const STATUS_LABEL: Record<string, string> = { SUCCESS: "결제완료", FAILED: "결제실패", PENDING: "처리중" };
 const STATUS_COLOR: Record<string, { background: string; color: string }> = {
@@ -68,6 +70,7 @@ export default function AdminDashboard() {
         {tab === "주문관리" && <OrdersTab />}
         {tab === "사용자" && <UsersTab />}
         {tab === "상품관리" && <ProductsTab />}
+        {tab === "모니터링" && <MonitoringTab />}
       </div>
     </div>
   );
@@ -457,6 +460,65 @@ function Pagination({ page, totalPages, onPageChange }: { page: number; totalPag
       <span className="text-xs" style={{ color: "#666" }}>{page} / {totalPages}</span>
       <button onClick={() => onPageChange(Math.min(totalPages, page + 1))} disabled={page === totalPages}
         className="px-3 py-1 text-xs border rounded-sm disabled:opacity-40" style={{ borderColor: "#ddd" }}>다음</button>
+    </div>
+  );
+}
+
+const GRAFANA_DASHBOARDS = [
+  {
+    title: "Kubernetes 클러스터 리소스",
+    url: `${GRAFANA_URL}/d/efa86fd1d0c121a26444b636a3f509a8/kubernetes-compute-resources-cluster?orgId=1&kiosk`,
+  },
+  {
+    title: "Kubernetes 네임스페이스별 리소스",
+    url: `${GRAFANA_URL}/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-namespace=fiveline&kiosk`,
+  },
+  {
+    title: "Kubernetes Pod 상세",
+    url: `${GRAFANA_URL}/d/6581e46064c2d4237c8073e55b5db58f/kubernetes-compute-resources-pod?orgId=1&var-namespace=fiveline&kiosk`,
+  },
+];
+
+function MonitoringTab() {
+  const [selected, setSelected] = useState(0);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        {GRAFANA_DASHBOARDS.map((d, i) => (
+          <button
+            key={i}
+            onClick={() => setSelected(i)}
+            className="px-4 py-1.5 text-xs font-medium border rounded-sm transition-colors"
+            style={{
+              background: selected === i ? "#111" : "#fff",
+              color: selected === i ? "#fff" : "#555",
+              borderColor: selected === i ? "#111" : "#ddd",
+            }}
+          >
+            {d.title}
+          </button>
+        ))}
+        <a
+          href={GRAFANA_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-auto px-3 py-1.5 text-xs border rounded-sm"
+          style={{ borderColor: "#ddd", color: "#555" }}
+        >
+          Grafana 전체 화면 ↗
+        </a>
+      </div>
+
+      <div className="bg-white border" style={{ borderColor: "#e5e7eb" }}>
+        <iframe
+          src={GRAFANA_DASHBOARDS[selected].url}
+          width="100%"
+          height="700"
+          frameBorder="0"
+          title={GRAFANA_DASHBOARDS[selected].title}
+        />
+      </div>
     </div>
   );
 }
