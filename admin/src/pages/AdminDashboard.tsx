@@ -14,7 +14,7 @@ type AdminOrder = { id: number; total_price: number; status: string; created_at:
 type AdminUser = { id: number; email: string; name: string; role: string; phone: string | null; created_at: string };
 type AdminProduct = { id: number; name: string; category: string; brand: string | null; price: number; stock_quantity: number };
 
-const TABS = ["대시보드", "주문관리", "사용자", "상품관리", "모니터링"] as const;
+const TABS = ["대시보드", "주문관리", "사용자", "상품관리", "모니터링", "코드품질"] as const;
 type Tab = typeof TABS[number];
 
 const GRAFANA_URL = "http://a57ca6c023f7c4c288f6c35d58822123-814020370.ap-northeast-2.elb.amazonaws.com";
@@ -71,6 +71,7 @@ export default function AdminDashboard() {
         {tab === "사용자" && <UsersTab />}
         {tab === "상품관리" && <ProductsTab />}
         {tab === "모니터링" && <MonitoringTab />}
+        {tab === "코드품질" && <CodeQualityTab />}
       </div>
     </div>
   );
@@ -596,13 +597,19 @@ function SonarCloudSection() {
   );
 }
 
+function CodeQualityTab() {
+  return (
+    <div className="space-y-4">
+      <SonarCloudSection />
+    </div>
+  );
+}
+
 function MonitoringTab() {
   const [selected, setSelected] = useState(0);
 
   return (
     <div className="space-y-4">
-      <SonarCloudSection />
-
       <div className="flex items-center gap-2 flex-wrap">
         {GRAFANA_DASHBOARDS.map((d, i) => (
           <button
