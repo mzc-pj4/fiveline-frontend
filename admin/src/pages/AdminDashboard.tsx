@@ -14,7 +14,7 @@ type AdminOrder = { id: number; total_price: number; status: string; created_at:
 type AdminUser = { id: number; email: string; name: string; role: string; phone: string | null; created_at: string };
 type AdminProduct = { id: number; name: string; category: string; brand: string | null; price: number; stock_quantity: number };
 
-const TABS = ["대시보드", "주문관리", "사용자", "상품관리", "모니터링"] as const;
+const TABS = ["대시보드", "주문관리", "사용자", "상품관리", "모니터링", "코드품질", "AIOps"] as const;
 type Tab = typeof TABS[number];
 
 const GRAFANA_URL = "https://grafana.fiveline.store";
@@ -71,6 +71,8 @@ export default function AdminDashboard() {
         {tab === "사용자" && <UsersTab />}
         {tab === "상품관리" && <ProductsTab />}
         {tab === "모니터링" && <MonitoringTab />}
+        {tab === "코드품질" && <CodeQualityTab />}
+        {tab === "AIOps" && <AIOpsTab />}
       </div>
     </div>
   );
@@ -607,13 +609,127 @@ function SonarCloudSection() {
   );
 }
 
+function CodeQualityTab() {
+  return (
+    <div className="space-y-4">
+      <SonarCloudSection />
+    </div>
+  );
+}
+
+type AIOpsDeployment = {
+  service_name: string;
+  deployed_at: string;
+  image_tag: string;
+  total_requests: number;
+  error_count: number;
+  error_rate: number;
+  p99_latency_ms: number;
+  ai_status: string;
+  ai_recommendation: string;
+  ai_reason: string;
+};
+
+const AI_STATUS_STYLE: Record<string, { bg: string; color: string; emoji: string }> = {
+  정상: { bg: "#ecfdf5", color: "#065f46", emoji: "🟢" },
+  경고: { bg: "#fffbeb", color: "#92400e", emoji: "🟡" },
+  위험: { bg: "#fef2f2", color: "#991b1b", emoji: "🔴" },
+};
+
+function AIOpsTab() {
+  const [items, setItems] = useState<AIOpsDeployment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    setLoading(true);
+    api.get<{ items: AIOpsDeployment[] }>("/api/admin/aiops/deployments?service=order-service&limit=10")
+      .then((r) => setItems(r.data.items))
+      .finally(() => setLoading(false));
+  }, [tick]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-bold" style={{ color: "#111" }}>카나리 배포 AIOps 분석 이력</h2>
+          <p className="text-xs mt-0.5" style={{ color: "#999" }}>order-service 배포 후 Bedrock이 분석한 결과 (최근 10건)</p>
+        </div>
+        <RefreshButton onClick={() => setTick((n) => n + 1)} />
+      </div>
+
+      {loading ? (
+        <p className="text-sm" style={{ color: "#bbb" }}>불러오는 중...</p>
+      ) : items.length === 0 ? (
+        <div className="bg-white border p-10 text-center" style={{ borderColor: "#e5e7eb" }}>
+          <p className="text-sm" style={{ color: "#bbb" }}>분석 이력이 없습니다.</p>
+          <p className="text-xs mt-1" style={{ color: "#ccc" }}>order-service 배포 후 post-canary-analysis job이 완료되면 여기에 표시됩니다.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {items.map((item) => {
+            const style = AI_STATUS_STYLE[item.ai_status] ?? { bg: "#f3f4f6", color: "#555", emoji: "⚪" };
+            const deployedKr = new Date(item.deployed_at).toLocaleString("ko-KR");
+            const shortTag = item.image_tag.length > 30 ? item.image_tag.slice(0, 30) + "..." : item.image_tag;
+
+            return (
+              <div key={item.deployed_at} className="bg-white border p-5" style={{ borderColor: "#e5e7eb" }}>
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-bold" style={{ color: "#111" }}>{item.service_name}</span>
+                      <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ background: "#f3f4f6", color: "#555" }}>{shortTag}</span>
+                    </div>
+                    <p className="text-xs" style={{ color: "#aaa" }}>{deployedKr}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs px-2.5 py-1 rounded-sm font-bold" style={{ background: style.bg, color: style.color }}>
+                      {style.emoji} {item.ai_status}
+                    </span>
+                    <span className="text-xs px-2.5 py-1 border rounded-sm font-medium" style={{ borderColor: "#e5e7eb", color: "#555" }}>
+                      {item.ai_recommendation}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="p-3 rounded" style={{ background: "#f9fafb" }}>
+                    <p className="text-xs mb-0.5" style={{ color: "#999" }}>총 요청</p>
+                    <p className="text-base font-bold" style={{ color: "#111" }}>{item.total_requests.toLocaleString()}건</p>
+                  </div>
+                  <div className="p-3 rounded" style={{ background: item.error_rate > 5 ? "#fef2f2" : "#f9fafb" }}>
+                    <p className="text-xs mb-0.5" style={{ color: "#999" }}>5xx 에러율</p>
+                    <p className="text-base font-bold" style={{ color: item.error_rate > 5 ? "#991b1b" : "#111" }}>
+                      {item.error_rate.toFixed(2)}%
+                      <span className="text-xs font-normal ml-1" style={{ color: "#aaa" }}>({item.error_count}건)</span>
+                    </p>
+                  </div>
+                  <div className="p-3 rounded" style={{ background: item.p99_latency_ms > 1000 ? "#fffbeb" : "#f9fafb" }}>
+                    <p className="text-xs mb-0.5" style={{ color: "#999" }}>P99 응답시간</p>
+                    <p className="text-base font-bold" style={{ color: item.p99_latency_ms > 1000 ? "#92400e" : "#111" }}>
+                      {item.p99_latency_ms.toLocaleString()}ms
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded" style={{ background: "#f9fafb" }}>
+                  <p className="text-xs font-medium mb-1" style={{ color: "#666" }}>AI 판단 근거</p>
+                  <p className="text-sm" style={{ color: "#444" }}>{item.ai_reason}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MonitoringTab() {
   const [selected, setSelected] = useState(0);
 
   return (
     <div className="space-y-4">
-      <SonarCloudSection />
-
       <div className="flex items-center gap-2 flex-wrap">
         {GRAFANA_DASHBOARDS.map((d, i) => (
           <button
