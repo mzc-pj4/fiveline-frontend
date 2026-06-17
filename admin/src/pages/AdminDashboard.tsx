@@ -125,10 +125,10 @@ function DashboardTab() {
         <RefreshButton onClick={() => setTick((n) => n + 1)} />
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <KpiCard label="총 주문 수" value={data.total_orders.toLocaleString()} />
-        <KpiCard label="총 매출" value={`${Math.round(data.total_revenue).toLocaleString()}원`} />
-        <KpiCard label="회원 수" value={data.total_users.toLocaleString()} />
-        <KpiCard label="상품 수" value={data.total_products.toLocaleString()} />
+        <KpiCard label="총 주문 수" value={(data.total_orders ?? 0).toLocaleString()} />
+        <KpiCard label="총 매출" value={`${Math.round(data.total_revenue ?? 0).toLocaleString()}원`} />
+        <KpiCard label="회원 수" value={(data.total_users ?? 0).toLocaleString()} />
+        <KpiCard label="상품 수" value={(data.total_products ?? 0).toLocaleString()} />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
