@@ -488,7 +488,7 @@ const GRAFANA_DASHBOARDS = [
   },
   {
     title: "Kubernetes Pod 상세",
-    url: `${GRAFANA_URL}/d/6581e46064c2d4237c8073e55b5db58f/kubernetes-compute-resources-pod?orgId=1&var-namespace=fiveline&kiosk`,
+    url: `${GRAFANA_URL}/d/6581e46e4e5c7ba40a07646395ef7b23/kubernetes-compute-resources-pod?orgId=1&var-namespace=fiveline&kiosk`,
   },
 ];
 
