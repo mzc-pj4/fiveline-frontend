@@ -14,7 +14,7 @@ type AdminOrder = { id: number; total_price: number; status: string; created_at:
 type AdminUser = { id: number; email: string; name: string; role: string; phone: string | null; created_at: string };
 type AdminProduct = { id: number; name: string; category: string; brand: string | null; price: number; stock_quantity: number };
 
-const TABS = ["대시보드", "주문관리", "사용자", "상품관리", "모니터링", "코드품질", "AIOps"] as const;
+const TABS = ["대시보드", "주문관리", "사용자", "상품관리", "모니터링", "코드품질"] as const;
 type Tab = typeof TABS[number];
 
 const GRAFANA_URL = "https://grafana.fiveline.store";
@@ -72,7 +72,6 @@ export default function AdminDashboard() {
         {tab === "상품관리" && <ProductsTab />}
         {tab === "모니터링" && <MonitoringTab />}
         {tab === "코드품질" && <CodeQualityTab />}
-        {tab === "AIOps" && <AIOpsTab />}
       </div>
     </div>
   );
@@ -611,8 +610,9 @@ function SonarCloudSection() {
 
 function CodeQualityTab() {
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <SonarCloudSection />
+      <AIOpsSection />
     </div>
   );
 }
@@ -636,7 +636,7 @@ const AI_STATUS_STYLE: Record<string, { bg: string; color: string; emoji: string
   위험: { bg: "#fef2f2", color: "#991b1b", emoji: "🔴" },
 };
 
-function AIOpsTab() {
+function AIOpsSection() {
   const [items, setItems] = useState<AIOpsDeployment[]>([]);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
