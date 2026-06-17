@@ -514,7 +514,7 @@ function useSonarCloud() {
 
     Promise.all(
       SONAR_PROJECTS.map((p) =>
-        fetch(`https://sonarcloud.io/api/measures/component?component=${p.key}&metricKeys=${SONAR_METRICS}`, { headers })
+        fetch(`/sonar-api/measures/component?component=${p.key}&metricKeys=${SONAR_METRICS}`, { headers })
           .then((r) => r.json())
           .then((data) => ({ name: p.name, key: p.key, measures: data.component?.measures ?? [] }))
           .catch(() => ({ name: p.name, key: p.key, measures: [] }))
