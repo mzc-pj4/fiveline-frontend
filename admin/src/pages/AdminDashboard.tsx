@@ -17,7 +17,7 @@ type AdminProduct = { id: number; name: string; category: string; brand: string 
 const TABS = ["대시보드", "주문관리", "사용자", "상품관리", "모니터링"] as const;
 type Tab = typeof TABS[number];
 
-const GRAFANA_URL = "http://a57ca6c023f7c4c288f6c35d58822123-814020370.ap-northeast-2.elb.amazonaws.com";
+const GRAFANA_URL = "https://grafana.fiveline.store";
 
 const STATUS_LABEL: Record<string, string> = { SUCCESS: "결제완료", FAILED: "결제실패", PENDING: "처리중" };
 const STATUS_COLOR: Record<string, { background: string; color: string }> = {
