@@ -113,7 +113,18 @@ function DashboardTab() {
 
   useEffect(() => {
     setLoading(true);
-    api.get<DashboardData>("/api/admin/dashboard").then((r) => setData(r.data)).finally(() => setLoading(false));
+    api.get<DashboardData>("/api/admin/dashboard").then((r) => {
+      const d = r.data;
+      setData({
+        total_orders: d.total_orders ?? 0,
+        total_revenue: d.total_revenue ?? 0,
+        total_users: d.total_users ?? 0,
+        total_products: d.total_products ?? 0,
+        orders_by_status: d.orders_by_status ?? [],
+        top_products: d.top_products ?? [],
+        recent_orders: d.recent_orders ?? [],
+      });
+    }).finally(() => setLoading(false));
   }, [tick]);
 
   if (loading) return <p className="text-sm" style={{ color: "#bbb" }}>불러오는 중...</p>;
