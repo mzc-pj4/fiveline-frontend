@@ -644,7 +644,8 @@ function AIOpsSection() {
   useEffect(() => {
     setLoading(true);
     api.get<{ items: AIOpsDeployment[] }>("/api/admin/aiops/deployments?service=order-service&limit=10")
-      .then((r) => setItems(r.data.items))
+      .then((r) => setItems(r.data.items ?? []))
+      .catch(() => setItems([]))
       .finally(() => setLoading(false));
   }, [tick]);
 
