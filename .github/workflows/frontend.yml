@@ -370,7 +370,7 @@ jobs:
             --body "자동 생성된 PR입니다.\n\n서비스: frontend\n이미지 태그: ${IMAGE_TAG}\n실행자: ${{ github.actor }}" \
             --base main \
             --head $BRANCH
-          gh pr merge --auto --squash \
+          gh pr merge --squash \
             --repo mzc-pj4/fiveline_k8s_manifest \
             $BRANCH
 
