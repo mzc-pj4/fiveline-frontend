@@ -624,7 +624,15 @@ type AIOpsDeployment = {
   total_requests: number;
   error_count: number;
   error_rate: number;
+  error_4xx_count?: number;
+  error_4xx_rate?: number;
   p99_latency_ms: number;
+  risk_level?: string;
+  risk_reason?: string;
+  trivy_critical?: number;
+  trivy_high?: number;
+  trivy_medium?: number;
+  trivy_low?: number;
   ai_status: string;
   ai_recommendation: string;
   ai_reason: string;
@@ -673,8 +681,25 @@ function AIOpsSection() {
             const deployedKr = new Date(item.deployed_at).toLocaleString("ko-KR");
             const shortTag = item.image_tag.length > 30 ? item.image_tag.slice(0, 30) + "..." : item.image_tag;
 
+            const hasTrivyData = item.trivy_critical !== undefined;
+            const trivyCritical = item.trivy_critical ?? 0;
+            const trivyHigh = item.trivy_high ?? 0;
+            const trivyMedium = item.trivy_medium ?? 0;
+            const trivyLow = item.trivy_low ?? 0;
+            const trivyTotal = trivyCritical + trivyHigh + trivyMedium + trivyLow;
+            const error4xxRate = item.error_4xx_rate ?? 0;
+            const error4xxCount = item.error_4xx_count ?? 0;
+
+            const RISK_STYLE: Record<string, { bg: string; color: string }> = {
+              "낮음": { bg: "#ecfdf5", color: "#065f46" },
+              "중간": { bg: "#fffbeb", color: "#92400e" },
+              "높음": { bg: "#fef2f2", color: "#991b1b" },
+            };
+            const riskStyle = RISK_STYLE[item.risk_level ?? ""] ?? { bg: "#f3f4f6", color: "#888" };
+
             return (
               <div key={item.deployed_at} className="bg-white border p-5" style={{ borderColor: "#e5e7eb" }}>
+                {/* 헤더 */}
                 <div className="flex items-start justify-between gap-4 mb-4">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
@@ -683,7 +708,12 @@ function AIOpsSection() {
                     </div>
                     <p className="text-xs" style={{ color: "#aaa" }}>{deployedKr}</p>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                    {item.risk_level && (
+                      <span className="text-xs px-2.5 py-1 rounded-sm font-medium" style={{ background: riskStyle.bg, color: riskStyle.color }}>
+                        위험도 {item.risk_level}
+                      </span>
+                    )}
                     <span className="text-xs px-2.5 py-1 rounded-sm font-bold" style={{ background: style.bg, color: style.color }}>
                       {style.emoji} {item.ai_status}
                     </span>
@@ -693,7 +723,8 @@ function AIOpsSection() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3 mb-4">
+                {/* 메트릭 4열 */}
+                <div className="grid grid-cols-4 gap-3 mb-3">
                   <div className="p-3 rounded" style={{ background: "#f9fafb" }}>
                     <p className="text-xs mb-0.5" style={{ color: "#999" }}>총 요청</p>
                     <p className="text-base font-bold" style={{ color: "#111" }}>{item.total_requests.toLocaleString()}건</p>
@@ -705,6 +736,13 @@ function AIOpsSection() {
                       <span className="text-xs font-normal ml-1" style={{ color: "#aaa" }}>({item.error_count}건)</span>
                     </p>
                   </div>
+                  <div className="p-3 rounded" style={{ background: error4xxRate > 20 ? "#fffbeb" : "#f9fafb" }}>
+                    <p className="text-xs mb-0.5" style={{ color: "#999" }}>4xx 에러율</p>
+                    <p className="text-base font-bold" style={{ color: error4xxRate > 20 ? "#92400e" : "#111" }}>
+                      {error4xxRate.toFixed(2)}%
+                      <span className="text-xs font-normal ml-1" style={{ color: "#aaa" }}>({error4xxCount}건)</span>
+                    </p>
+                  </div>
                   <div className="p-3 rounded" style={{ background: item.p99_latency_ms > 1000 ? "#fffbeb" : "#f9fafb" }}>
                     <p className="text-xs mb-0.5" style={{ color: "#999" }}>P99 응답시간</p>
                     <p className="text-base font-bold" style={{ color: item.p99_latency_ms > 1000 ? "#92400e" : "#111" }}>
@@ -713,9 +751,33 @@ function AIOpsSection() {
                   </div>
                 </div>
 
+                {/* Trivy 보안 스캔 */}
+                {hasTrivyData && (
+                  <div className="flex items-center gap-2 mb-3 p-3 rounded" style={{ background: trivyCritical > 0 ? "#fef2f2" : trivyHigh > 0 ? "#fffbeb" : "#f0fdf4" }}>
+                    <span className="text-xs font-medium shrink-0" style={{ color: "#666" }}>이미지 보안 스캔</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {[
+                        { label: "CRITICAL", count: trivyCritical, color: trivyCritical > 0 ? "#991b1b" : "#aaa", bg: trivyCritical > 0 ? "#fef2f2" : "#f3f4f6" },
+                        { label: "HIGH", count: trivyHigh, color: trivyHigh > 0 ? "#92400e" : "#aaa", bg: trivyHigh > 0 ? "#fffbeb" : "#f3f4f6" },
+                        { label: "MEDIUM", count: trivyMedium, color: trivyMedium > 0 ? "#1e40af" : "#aaa", bg: trivyMedium > 0 ? "#eff6ff" : "#f3f4f6" },
+                        { label: "LOW", count: trivyLow, color: "#aaa", bg: "#f3f4f6" },
+                      ].map(({ label, count, color, bg }) => (
+                        <span key={label} className="text-xs px-2 py-0.5 rounded font-mono font-bold" style={{ background: bg, color }}>
+                          {label} {count}
+                        </span>
+                      ))}
+                      {trivyTotal === 0 && <span className="text-xs" style={{ color: "#065f46" }}>취약점 없음 ✓</span>}
+                    </div>
+                  </div>
+                )}
+
+                {/* AI 판단 근거 */}
                 <div className="p-3 rounded" style={{ background: "#f9fafb" }}>
                   <p className="text-xs font-medium mb-1" style={{ color: "#666" }}>AI 판단 근거</p>
                   <p className="text-sm" style={{ color: "#444" }}>{item.ai_reason}</p>
+                  {item.risk_reason && (
+                    <p className="text-xs mt-1" style={{ color: "#888" }}>배포 위험: {item.risk_reason}</p>
+                  )}
                 </div>
               </div>
             );
