@@ -179,7 +179,7 @@ jobs:
     name: Notify
     runs-on: ubuntu-latest
     needs: update-manifest
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.update-manifest.result != 'skipped'
+    if: false  # 알림 비활성화 (복구: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.update-manifest.result != 'skipped')
 
     steps:
       - name: Slack 알림
