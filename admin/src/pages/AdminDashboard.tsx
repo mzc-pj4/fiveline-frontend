@@ -880,6 +880,183 @@ function CodeQualityTab() {
   );
 }
 
+type RolloutStatus = {
+  phase: string;
+  in_progress: boolean;
+  current_step_index: number;
+  steps_total: number;
+  current_weight: number;
+  paused: boolean;
+  stable_image: string;
+  canary_image: string;
+};
+
+type RealtimeMetrics = {
+  period_minutes: number;
+  total_requests: number;
+  error_rate: number;
+  error_4xx_rate: number;
+  p99_latency_ms: number;
+};
+
+type CanaryProbe = {
+  service: string;
+  probe_count: number;
+  error_count: number;
+  error_rate: number;
+  p99_latency_ms: number;
+  avg_latency_ms: number;
+  canary_only: boolean;
+};
+
+function CanaryStatusPanel({
+  serviceName,
+  onAction,
+}: {
+  serviceName: string;
+  onAction: (action: "promote" | "abort") => void;
+}) {
+  const [status, setStatus] = useState<RolloutStatus | null>(null);
+  const [metrics, setMetrics] = useState<RealtimeMetrics | null>(null);
+  const [probe, setProbe] = useState<CanaryProbe | null>(null);
+
+  const fetchAll = () => {
+    api.get<RolloutStatus>(`/api/admin/cicd/rollout-status?service=${serviceName}`)
+      .then((r) => setStatus(r.data))
+      .catch(() => setStatus(null));
+    api.get<RealtimeMetrics>(`/api/admin/cicd/realtime-metrics?service=${serviceName}&minutes=5`)
+      .then((r) => setMetrics(r.data))
+      .catch(() => setMetrics(null));
+    api.get<CanaryProbe>(`/api/admin/cicd/canary-probe?service=${serviceName}&count=20`)
+      .then((r) => setProbe(r.data))
+      .catch(() => setProbe(null));
+  };
+
+  useEffect(() => {
+    fetchAll();
+    const id = setInterval(fetchAll, 30000);
+    return () => clearInterval(id);
+  }, [serviceName]);
+
+  if (!status?.in_progress) return null;
+
+  return (
+    <div className="border p-5" style={{ borderColor: "#f59e0b", background: "#fffbeb" }}>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold px-2 py-0.5 rounded-sm" style={{ background: "#f59e0b", color: "#fff" }}>
+            CANARY 진행중
+          </span>
+          <span className="text-sm font-bold" style={{ color: "#111" }}>{serviceName}</span>
+          <span className="text-xs" style={{ color: "#888" }}>
+            Step {status.current_step_index}/{status.steps_total} · 트래픽 {status.current_weight}%
+          </span>
+          {status.paused && (
+            <span className="text-xs px-2 py-0.5 rounded-sm" style={{ background: "#fef2f2", color: "#991b1b" }}>
+              ⏸ 수동 승인 대기
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          {status.paused && (
+            <button
+              onClick={() => onAction("promote")}
+              className="text-xs px-3 py-1.5 font-bold rounded-sm"
+              style={{ background: "#111", color: "#fff" }}
+            >
+              🚀 승인
+            </button>
+          )}
+          <button
+            onClick={() => onAction("abort")}
+            className="text-xs px-3 py-1.5 border rounded-sm font-medium"
+            style={{ borderColor: "#991b1b", color: "#991b1b" }}
+          >
+            ⏪ 롤백
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <div className="flex justify-between text-xs mb-1" style={{ color: "#888" }}>
+          <span>Stable ({100 - status.current_weight}%)</span>
+          <span>Canary ({status.current_weight}%)</span>
+        </div>
+        <div className="h-2 rounded-full overflow-hidden" style={{ background: "#e5e7eb" }}>
+          <div
+            className="h-full rounded-full transition-all"
+            style={{ width: `${status.current_weight}%`, background: "#f59e0b" }}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="p-3 rounded" style={{ background: "#f9fafb" }}>
+          <p className="text-xs mb-1" style={{ color: "#999" }}>Stable 이미지</p>
+          <p className="text-xs font-mono truncate" style={{ color: "#111" }}>{status.stable_image || "-"}</p>
+        </div>
+        <div className="p-3 rounded border" style={{ background: "#fff7ed", borderColor: "#fcd34d" }}>
+          <p className="text-xs mb-1" style={{ color: "#92400e" }}>Canary 이미지 (신규)</p>
+          <p className="text-xs font-mono truncate" style={{ color: "#92400e" }}>{status.canary_image || "-"}</p>
+        </div>
+      </div>
+
+      {/* Canary 파드 직접 측정 */}
+      {probe && (
+        <div className="mb-3">
+          <p className="text-xs mb-2 font-medium" style={{ color: "#92400e" }}>
+            Canary 파드 직접 측정 ({probe.probe_count}회 probe · canary 파드만)
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3 rounded text-center" style={{ background: "#fff7ed", border: "1px solid #fcd34d" }}>
+              <p className="text-xs mb-0.5" style={{ color: "#92400e" }}>에러율</p>
+              <p className="text-lg font-bold" style={{ color: probe.error_rate > 5 ? "#991b1b" : "#92400e" }}>
+                {probe.error_rate.toFixed(1)}%
+              </p>
+              <p className="text-xs" style={{ color: "#aaa" }}>{probe.error_count}건 실패</p>
+            </div>
+            <div className="p-3 rounded text-center" style={{ background: "#fff7ed", border: "1px solid #fcd34d" }}>
+              <p className="text-xs mb-0.5" style={{ color: "#92400e" }}>P99 응답시간</p>
+              <p className="text-lg font-bold" style={{ color: probe.p99_latency_ms > 1000 ? "#991b1b" : "#92400e" }}>
+                {probe.p99_latency_ms}ms
+              </p>
+            </div>
+            <div className="p-3 rounded text-center" style={{ background: "#fff7ed", border: "1px solid #fcd34d" }}>
+              <p className="text-xs mb-0.5" style={{ color: "#92400e" }}>평균 응답시간</p>
+              <p className="text-lg font-bold" style={{ color: "#92400e" }}>{probe.avg_latency_ms}ms</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 전체 ALB 메트릭 */}
+      {metrics && (
+        <div>
+          <p className="text-xs mb-2" style={{ color: "#aaa" }}>전체 ALB 메트릭 (최근 {metrics.period_minutes}분 · stable+canary 합산 · 30초 자동갱신)</p>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3 rounded text-center" style={{ background: "#fff" }}>
+              <p className="text-xs mb-0.5" style={{ color: "#999" }}>요청 수</p>
+              <p className="text-lg font-bold" style={{ color: "#111" }}>{metrics.total_requests.toLocaleString()}</p>
+            </div>
+            <div className="p-3 rounded text-center" style={{ background: metrics.error_rate > 5 ? "#fef2f2" : "#fff" }}>
+              <p className="text-xs mb-0.5" style={{ color: "#999" }}>5xx 에러율</p>
+              <p className="text-lg font-bold" style={{ color: metrics.error_rate > 5 ? "#991b1b" : "#111" }}>
+                {metrics.error_rate.toFixed(2)}%
+              </p>
+            </div>
+            <div className="p-3 rounded text-center" style={{ background: metrics.p99_latency_ms > 1000 ? "#fffbeb" : "#fff" }}>
+              <p className="text-xs mb-0.5" style={{ color: "#999" }}>P99 응답시간</p>
+              <p className="text-lg font-bold" style={{ color: metrics.p99_latency_ms > 1000 ? "#92400e" : "#111" }}>
+                {metrics.p99_latency_ms.toLocaleString()}ms
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 type AIOpsDeployment = {
   service_name: string;
   deployed_at: string;
@@ -899,6 +1076,14 @@ type AIOpsDeployment = {
   ai_status: string;
   ai_recommendation: string;
   ai_reason: string;
+  step_index?: number | null;
+  canary_weight?: number | null;
+};
+
+type DeploymentGroup = {
+  image_tag: string;
+  steps: AIOpsDeployment[];
+  latest: AIOpsDeployment;
 };
 
 const AI_STATUS_STYLE: Record<string, { bg: string; color: string; emoji: string }> = {
@@ -998,11 +1183,25 @@ function AIOpsSection() {
   useEffect(() => {
     setLoading(true);
     setItems([]);
-    api.get<{ items: AIOpsDeployment[] }>(`/api/admin/aiops/deployments?service=${selectedService}&limit=10`)
+    api.get<{ items: AIOpsDeployment[] }>(`/api/admin/aiops/deployments?service=${selectedService}&limit=30`)
       .then((r) => setItems(r.data.items ?? []))
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
   }, [selectedService, tick]);
+
+  const groupedDeployments: DeploymentGroup[] = (() => {
+    const map = new Map<string, AIOpsDeployment[]>();
+    for (const item of items) {
+      const key = item.image_tag;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(item);
+    }
+    return Array.from(map.entries()).map(([image_tag, steps]) => ({
+      image_tag,
+      steps: steps.sort((a, b) => (a.step_index ?? 99) - (b.step_index ?? 99)),
+      latest: steps[0],
+    }));
+  })();
 
   function showToast(msg: string, type: "success" | "error") {
     setToast({ msg, type });
@@ -1044,6 +1243,11 @@ function AIOpsSection() {
         </div>
       )}
 
+      <CanaryStatusPanel
+        serviceName={selectedService}
+        onAction={(action) => setConfirmAction({ action })}
+      />
+
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-bold" style={{ color: "#111" }}>카나리 배포 AIOps 분석 이력</h2>
@@ -1079,20 +1283,22 @@ function AIOpsSection() {
 
       {loading ? (
         <p className="text-sm" style={{ color: "#bbb" }}>불러오는 중...</p>
-      ) : items.length === 0 ? (
+      ) : groupedDeployments.length === 0 ? (
         <div className="bg-white border p-10 text-center" style={{ borderColor: "#e5e7eb" }}>
           <p className="text-sm" style={{ color: "#bbb" }}>분석 이력이 없습니다.</p>
           <p className="text-xs mt-1" style={{ color: "#ccc" }}>{selectedService} 배포 후 post-canary-analysis job이 완료되면 여기에 표시됩니다.</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {items.map((item, idx) => {
-            const prevItem = items[idx + 1] ?? null;
+        <div className="space-y-4">
+          {groupedDeployments.map((group) => {
+            const item = group.latest;
+            const hasSteps = group.steps.some(s => s.step_index != null);
+            let prevItem: AIOpsDeployment | null = null;
             const style = AI_STATUS_STYLE[item.ai_status] ?? { bg: "#f3f4f6", color: "#555", emoji: "⚪" };
             const deployedKr = new Date(item.deployed_at).toLocaleString("ko-KR");
             const shortTag = item.image_tag.length > 30 ? item.image_tag.slice(0, 30) + "..." : item.image_tag;
             const isLowTraffic = item.total_requests < MIN_REQUESTS_THRESHOLD;
-            const itemKey = item.deployed_at;
+            const itemKey = item.image_tag;
             const fbState = feedback[itemKey];
             const riskStyle = RISK_STYLE[item.risk_level ?? ""] ?? { bg: "#f3f4f6", color: "#888" };
 
@@ -1144,6 +1350,35 @@ function AIOpsSection() {
                     )}
                   </div>
                 </div>
+
+                {/* 단계별 타임라인 */}
+                {hasSteps && (
+                  <div className="mb-4 p-3 rounded" style={{ background: "#f9fafb" }}>
+                    <p className="text-xs font-medium mb-2" style={{ color: "#666" }}>단계별 AI 분석</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {group.steps.map((step) => {
+                        const stepStyle = AI_STATUS_STYLE[step.ai_status] ?? { bg: "#f3f4f6", color: "#555", emoji: "⚪" };
+                        return (
+                          <div key={step.deployed_at} className="flex-1 min-w-0 border rounded p-2" style={{ borderColor: "#e5e7eb", background: "#fff" }}>
+                            <div className="flex items-center gap-1 mb-1">
+                              <span className="text-xs font-bold px-1.5 py-0.5 rounded-sm" style={{ background: "#f59e0b", color: "#fff" }}>
+                                {step.canary_weight ?? "?"}%
+                              </span>
+                              <span className="text-xs font-medium" style={{ color: stepStyle.color }}>
+                                {stepStyle.emoji} {step.ai_status}
+                              </span>
+                            </div>
+                            <p className="text-xs truncate" style={{ color: "#666" }}>{step.ai_reason}</p>
+                            <div className="flex gap-2 mt-1 text-xs" style={{ color: "#aaa" }}>
+                              <span>에러 {step.error_rate.toFixed(1)}%</span>
+                              <span>P99 {step.p99_latency_ms}ms</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* 저트래픽 경고 */}
                 {isLowTraffic && (
