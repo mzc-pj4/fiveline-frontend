@@ -23,12 +23,21 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ap-northeast-2
 
+      - name: Get dashboard bucket name from SSM
+        id: bucket
+        run: |
+          BUCKET=$(aws ssm get-parameter \
+            --name /fiveline/cicd/dashboard-bucket \
+            --query Parameter.Value \
+            --output text)
+          echo "name=$BUCKET" >> $GITHUB_OUTPUT
+
       - name: Upload dashboard to S3
         run: |
-          aws s3 sync dashboard/ "s3://${{ secrets.DASHBOARD_BUCKET }}/" \
+          aws s3 sync dashboard/ "s3://${{ steps.bucket.outputs.name }}/" \
             --delete \
             --cache-control "no-cache, no-store, must-revalidate"
-          echo "Dashboard deployed to s3://${{ secrets.DASHBOARD_BUCKET }}"
+          echo "Dashboard deployed to s3://${{ steps.bucket.outputs.name }}"
 
       - name: Invalidate CloudFront cache
         if: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID != '' }}
