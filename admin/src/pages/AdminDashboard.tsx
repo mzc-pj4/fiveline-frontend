@@ -14,7 +14,7 @@ type AdminOrder = { id: number; total_price: number; status: string; created_at:
 type AdminUser = { id: number; email: string; name: string; role: string; phone: string | null; created_at: string };
 type AdminProduct = { id: number; name: string; category: string; brand: string | null; price: number; stock_quantity: number };
 
-const TABS = ["대시보드", "주문관리", "사용자", "상품관리", "모니터링", "CI/CD"] as const;
+const TABS = ["대시보드", "주문관리", "사용자", "상품관리", "모니터링", "배포관리"] as const;
 type Tab = typeof TABS[number];
 
 const GRAFANA_URL = "https://grafana.fiveline.store";
@@ -71,7 +71,7 @@ export default function AdminDashboard() {
         {tab === "사용자" && <UsersTab />}
         {tab === "상품관리" && <ProductsTab />}
         {tab === "모니터링" && <MonitoringTab />}
-        {tab === "CI/CD" && <CodeQualityTab />}
+        {tab === "배포관리" && <CodeQualityTab />}
       </div>
     </div>
   );
