@@ -30,7 +30,6 @@ type OpsData = {
   reports?: { reportDate?: string; reportType?: string; title?: string; s3Url?: string; }[];
 };
 
-const DATA_URL = "https://data.fiveline.store/data.json";
 const CHAT_SESSION_KEY = "fiveline_chat_session_id";
 
 function useOpsData() {
@@ -38,9 +37,8 @@ function useOpsData() {
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     const load = () =>
-      fetch(`${DATA_URL}?t=${Date.now()}`)
-        .then((r) => r.json())
-        .then((d) => { setData(d); setLoading(false); })
+      api.get<OpsData>("/api/admin/ops-data")
+        .then((r) => { setData(r.data); setLoading(false); })
         .catch(() => setLoading(false));
     load();
     const t = setInterval(load, 60_000);
