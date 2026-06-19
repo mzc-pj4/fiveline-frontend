@@ -98,7 +98,7 @@ jobs:
     name: Build & Push to ECR
     runs-on: ubuntu-latest
     needs: dependency-check
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: false  # fiveline-backend/admin-service.yml에서 React+FastAPI 통합 이미지 빌드 담당
 
     steps:
       - name: Checkout code
