@@ -1,6 +1,7 @@
 name: Deploy Dashboard
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, develop]
     paths:
@@ -39,9 +40,3 @@ jobs:
             --cache-control "no-cache, no-store, must-revalidate"
           echo "Dashboard deployed to s3://${{ steps.bucket.outputs.name }}"
 
-      - name: Invalidate CloudFront cache
-        if: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID != '' }}
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id "${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}" \
-            --paths "/*"
