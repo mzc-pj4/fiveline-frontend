@@ -1,20 +1,58 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { clearAdminSession, getAdminUser } from "../auth";
+import { Bar, Doughnut } from "react-chartjs-2";
+import {
+  Chart as ChartJS, CategoryScale, LinearScale, BarElement,
+  ArcElement, Title, Tooltip, Legend,
+} from "chart.js";
+ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend);
 
-type DashboardData = {
-  total_orders: number; total_revenue: number;
-  total_users: number; total_products: number;
-  orders_by_status: { status: string; count: number }[];
-  top_products: { name: string; sold_count: number }[];
-  recent_orders: AdminOrder[];
+type OpsData = {
+  generatedAt?: string;
+  chatApiBase?: string;
+  summary?: {
+    totalOrders?: number; failureRate?: number;
+    avgResponseTimeMs?: number; currentAlarmCount?: number;
+    totalLogEvents?: number; errorRate?: number;
+    peakHour?: string; topErrorStream?: string; topErrorPct?: number;
+    operatorMetrics?: { totalOrders?: number; failureRate?: number; avgResponseTimeMs?: number; currentAlarmCount?: number; };
+    operatorMetricsSource?: string;
+  };
+  hourlyChart?: { rowCount?: number; labels?: string[]; totals?: number[]; errors?: number[]; };
+  resourceCheck?: {
+    total?: number;
+    byType?: Record<string, number>;
+    items?: { checkType?: string; resourceType?: string; resourceId?: string; reason?: string }[];
+  };
+  athenaQueries?: { label?: string; sql?: string; rowCount?: number; headers?: string[]; rows?: Record<string, string>[]; error?: string; }[];
+  reports?: { reportDate?: string; reportType?: string; title?: string; s3Url?: string; }[];
 };
+
+const DATA_URL = "https://data.fiveline.store/data.json";
+const CHAT_SESSION_KEY = "fiveline_chat_session_id";
+
+function useOpsData() {
+  const [data, setData] = useState<OpsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const load = () =>
+      fetch(`${DATA_URL}?t=${Date.now()}`)
+        .then((r) => r.json())
+        .then((d) => { setData(d); setLoading(false); })
+        .catch(() => setLoading(false));
+    load();
+    const t = setInterval(load, 60_000);
+    return () => clearInterval(t);
+  }, []);
+  return { data, loading };
+}
 type AdminOrder = { id: number; total_price: number; status: string; created_at: string; email: string; user_name: string };
 type AdminUser = { id: number; email: string; name: string; role: string; phone: string | null; created_at: string };
 type AdminProduct = { id: number; name: string; category: string; brand: string | null; price: number; stock_quantity: number };
 
-const TABS = ["대시보드", "주문관리", "사용자", "상품관리", "모니터링", "CI/CD"] as const;
+const TABS = ["대시보드", "주문관리", "사용자", "상품관리", "모니터링", "배포관리"] as const;
 type Tab = typeof TABS[number];
 
 const GRAFANA_URL = "https://grafana.fiveline.store";
@@ -71,7 +109,7 @@ export default function AdminDashboard() {
         {tab === "사용자" && <UsersTab />}
         {tab === "상품관리" && <ProductsTab />}
         {tab === "모니터링" && <MonitoringTab />}
-        {tab === "CI/CD" && <CodeQualityTab />}
+        {tab === "배포관리" && <CodeQualityTab />}
       </div>
     </div>
   );
@@ -108,111 +146,338 @@ function KpiCard({ label, value }: { label: string; value: string | number }) {
 }
 
 function DashboardTab() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [tick, setTick] = useState(0);
+  const { data, loading } = useOpsData();
+  if (loading && !data)
+    return <p className="text-sm" style={{ color: "#bbb" }}>운영 데이터 불러오는 중...</p>;
 
-  useEffect(() => {
-    setLoading(true);
-    api.get<DashboardData>("/api/admin/dashboard").then((r) => {
-      const d = r.data;
-      setData({
-        total_orders: d.total_orders ?? 0,
-        total_revenue: d.total_revenue ?? 0,
-        total_users: d.total_users ?? 0,
-        total_products: d.total_products ?? 0,
-        orders_by_status: d.orders_by_status ?? [],
-        top_products: d.top_products ?? [],
-        recent_orders: d.recent_orders ?? [],
-      });
-    }).finally(() => setLoading(false));
-  }, [tick]);
-
-  if (loading) return <p className="text-sm" style={{ color: "#bbb" }}>불러오는 중...</p>;
-  if (!data) return <p className="text-sm" style={{ color: "#f00" }}>데이터를 불러올 수 없습니다.</p>;
+  const s = data?.summary ?? {};
+  const op = s.operatorMetrics;
+  const pick = <T,>(a: T | undefined, b: T | undefined): T | undefined => (a != null ? a : b);
+  const totalOrders = pick(op?.totalOrders, s.totalOrders);
+  const failureRate = pick(op?.failureRate, s.failureRate);
+  const avgMs       = pick(op?.avgResponseTimeMs, s.avgResponseTimeMs);
+  const alarmCount  = pick(op?.currentAlarmCount, s.currentAlarmCount);
+  const fromMonitoring = s.operatorMetricsSource === "monitoring-team";
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
-        <RefreshButton onClick={() => setTick((n) => n + 1)} />
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <KpiCard label="총 주문 수" value={(data.total_orders ?? 0).toLocaleString()} />
-        <KpiCard label="총 매출" value={`${Math.round(data.total_revenue ?? 0).toLocaleString()}원`} />
-        <KpiCard label="회원 수" value={(data.total_users ?? 0).toLocaleString()} />
-        <KpiCard label="상품 수" value={(data.total_products ?? 0).toLocaleString()} />
+      <div className="flex items-center justify-between">
+        <span className="text-xs" style={{ color: "#aaa" }}>
+          {data?.generatedAt ? `데이터 생성: ${new Date(data.generatedAt).toLocaleString("ko-KR")}` : ""}
+        </span>
+        <RefreshButton onClick={() => window.location.reload()} />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-        <div className="bg-white border p-5" style={{ borderColor: "#e5e7eb" }}>
-          <h3 className="text-sm font-bold mb-4" style={{ color: "#111" }}>주문 상태별 현황</h3>
-          <div className="space-y-2">
-            {data.orders_by_status.map((s) => (
-              <div key={s.status} className="flex items-center justify-between">
-                <span className="text-xs px-2 py-0.5 font-medium rounded-sm" style={STATUS_COLOR[s.status] ?? { background: "#f3f4f6", color: "#555" }}>
-                  {STATUS_LABEL[s.status] ?? s.status}
-                </span>
-                <span className="text-sm font-bold" style={{ color: "#111" }}>{s.count}건</span>
-              </div>
-            ))}
-            {data.orders_by_status.length === 0 && <p className="text-xs" style={{ color: "#bbb" }}>주문 없음</p>}
+      {/* 오늘 운영 요약 */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <h3 className="text-sm font-bold" style={{ color: "#111" }}>오늘 운영 요약</h3>
+          {fromMonitoring && (
+            <span className="text-xs px-2 py-0.5 rounded-sm" style={{ background: "#ecfdf5", color: "#065f46" }}>
+              모니터링팀 실데이터
+            </span>
+          )}
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <KpiCard label="총 주문" value={totalOrders != null ? totalOrders.toLocaleString() : "-"} />
+          <KpiCard label="실패율" value={failureRate != null ? `${(Number(failureRate) * (Number(failureRate) <= 1 ? 100 : 1)).toFixed(1)}%` : "-"} />
+          <KpiCard label="평균 응답시간" value={avgMs != null ? `${avgMs}ms` : "-"} />
+          <KpiCard label="활성 알람" value={alarmCount != null ? String(alarmCount) : "-"} />
+        </div>
+      </div>
+
+      {/* 로그 분석 */}
+      <div>
+        <h3 className="text-sm font-bold mb-3" style={{ color: "#111" }}>로그 분석 (실데이터)</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <KpiCard label="총 로그 이벤트" value={s.totalLogEvents != null ? s.totalLogEvents.toLocaleString() : "-"} />
+          <KpiCard label="에러율" value={s.errorRate != null ? `${Number(s.errorRate).toFixed(2)}%` : "-"} />
+          <KpiCard label="피크 시간" value={s.peakHour ?? "-"} />
+          <div className="bg-white border p-5" style={{ borderColor: "#e5e7eb" }}>
+            <p className="text-xs font-medium mb-1" style={{ color: "#999" }}>최고 에러 스트림</p>
+            <p className="text-sm font-black truncate" style={{ color: "#f97316" }} title={s.topErrorStream ?? "-"}>
+              {s.topErrorStream ?? "-"}
+            </p>
+            {s.topErrorPct != null && (
+              <p className="text-xs mt-1" style={{ color: "#aaa" }}>에러율 {Number(s.topErrorPct).toFixed(2)}%</p>
+            )}
           </div>
         </div>
-
-        <div className="bg-white border p-5" style={{ borderColor: "#e5e7eb" }}>
-          <h3 className="text-sm font-bold mb-4" style={{ color: "#111" }}>인기 상품 Top 5</h3>
-          <ol className="space-y-2">
-            {data.top_products.map((p, i) => (
-              <li key={i} className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="w-5 text-xs font-bold" style={{ color: i < 3 ? "#f59e0b" : "#bbb" }}>{i + 1}</span>
-                  <span className="line-clamp-1" style={{ color: "#333", maxWidth: 180 }}>{p.name}</span>
-                </div>
-                <span className="font-medium" style={{ color: "#666" }}>{p.sold_count}개</span>
-              </li>
-            ))}
-            {data.top_products.length === 0 && <p className="text-xs" style={{ color: "#bbb" }}>판매 데이터 없음</p>}
-          </ol>
-        </div>
       </div>
 
-      <div className="bg-white border" style={{ borderColor: "#e5e7eb" }}>
-        <div className="px-5 py-3 border-b" style={{ borderColor: "#f0f0f0", background: "#fafafa" }}>
-          <h3 className="text-sm font-bold" style={{ color: "#111" }}>최근 주문 10건</h3>
-        </div>
+      <HourlyChartCard data={data?.hourlyChart} />
+      <ResourceCheckCard data={data?.resourceCheck} />
+      <AthenaCard queries={data?.athenaQueries ?? []} />
+      <ReportsCard reports={data?.reports ?? []} />
+      <AIChatCard chatApiBase={data?.chatApiBase ?? ""} />
+    </div>
+  );
+}
+
+function HourlyChartCard({ data }: { data?: OpsData["hourlyChart"] }) {
+  if (!data?.labels?.length) return null;
+  return (
+    <div className="bg-white border p-5" style={{ borderColor: "#e5e7eb" }}>
+      <h3 className="text-sm font-bold mb-4" style={{ color: "#111" }}>
+        시간대별 로그·에러 추이
+        <span className="ml-2 text-xs font-normal" style={{ color: "#aaa" }}>({data.rowCount ?? 0}개 구간)</span>
+      </h3>
+      <Bar
+        data={{
+          labels: data.labels,
+          datasets: [
+            { label: "총 이벤트",  data: data.totals ?? [], backgroundColor: "#3b82f6" },
+            { label: "에러 이벤트", data: data.errors ?? [], backgroundColor: "#ef4444" },
+          ],
+        }}
+        options={{
+          responsive: true,
+          plugins: { legend: { position: "bottom" as const } },
+          scales: { y: { beginAtZero: true } },
+        }}
+      />
+    </div>
+  );
+}
+
+function ResourceCheckCard({ data }: { data?: OpsData["resourceCheck"] }) {
+  if (!data) return null;
+  const labels = Object.keys(data.byType ?? {});
+  const values = Object.values(data.byType ?? {});
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+      <div className="bg-white border p-5" style={{ borderColor: "#e5e7eb" }}>
+        <h3 className="text-sm font-bold mb-4" style={{ color: "#111" }}>
+          리소스 점검 결과
+          <span className="ml-2 text-xs font-normal" style={{ color: "#aaa" }}>총 {data.total ?? 0}건</span>
+        </h3>
+        {labels.length > 0 ? (
+          <Doughnut
+            data={{
+              labels,
+              datasets: [{ data: values, backgroundColor: ["#ef4444","#f59e0b","#3b82f6","#10b981","#8b5cf6"] }],
+            }}
+            options={{ plugins: { legend: { position: "bottom" as const } } }}
+          />
+        ) : (
+          <p className="text-xs" style={{ color: "#bbb" }}>점검 결과 없음</p>
+        )}
+      </div>
+      <div className="bg-white border p-5" style={{ borderColor: "#e5e7eb" }}>
+        <h3 className="text-sm font-bold mb-4" style={{ color: "#111" }}>상세 항목</h3>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-xs">
             <thead>
-              <tr style={{ background: "#f9f9f9", borderBottom: "1px solid #f0f0f0" }}>
-                {["주문ID", "회원", "금액", "상태", "주문일시"].map((h) => (
-                  <th key={h} className="px-4 py-2 text-left text-xs font-medium" style={{ color: "#888" }}>{h}</th>
+              <tr style={{ background: "#f9f9f9" }}>
+                {["타입", "리소스", "사유"].map((h) => (
+                  <th key={h} className="px-3 py-2 text-left font-medium" style={{ color: "#888" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {data.recent_orders.map((o) => (
-                <tr key={o.id} style={{ borderBottom: "1px solid #f5f5f5" }}>
-                  <td className="px-4 py-2.5 font-medium" style={{ color: "#111" }}>#{o.id}</td>
-                  <td className="px-4 py-2.5" style={{ color: "#444" }}>
-                    <div>{o.user_name}</div>
-                    <div className="text-xs" style={{ color: "#aaa" }}>{o.email}</div>
+              {(data.items ?? []).slice(0, 10).map((it, i) => (
+                <tr key={i} style={{ borderBottom: "1px solid #f5f5f5" }}>
+                  <td className="px-3 py-2">
+                    <span className="px-2 py-0.5 rounded-sm" style={{ background: "#f3f4f6", color: "#555" }}>{it.checkType ?? "-"}</span>
                   </td>
-                  <td className="px-4 py-2.5 font-medium" style={{ color: "#111" }}>{Number(o.total_price).toLocaleString()}원</td>
-                  <td className="px-4 py-2.5">
-                    <span className="text-xs px-2 py-0.5 rounded-sm font-medium" style={STATUS_COLOR[o.status] ?? { background: "#f3f4f6", color: "#555" }}>
-                      {STATUS_LABEL[o.status] ?? o.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-xs" style={{ color: "#aaa" }}>{new Date(o.created_at.includes('+') || o.created_at.endsWith('Z') ? o.created_at : o.created_at + 'Z').toLocaleString("ko-KR")}</td>
+                  <td className="px-3 py-2 font-mono" style={{ color: "#444" }}>{it.resourceType} {it.resourceId}</td>
+                  <td className="px-3 py-2" style={{ color: "#666" }}>{it.reason ?? "-"}</td>
                 </tr>
               ))}
-              {data.recent_orders.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-6 text-center text-xs" style={{ color: "#bbb" }}>주문 없음</td></tr>
+              {(data.items ?? []).length === 0 && (
+                <tr><td colSpan={3} className="px-3 py-4 text-center" style={{ color: "#bbb" }}>항목 없음</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+function AthenaCard({ queries }: { queries: NonNullable<OpsData["athenaQueries"]> }) {
+  const [idx, setIdx] = useState(0);
+  if (queries.length === 0) return null;
+  const q = queries[((idx % queries.length) + queries.length) % queries.length];
+  return (
+    <div className="bg-white border p-5" style={{ borderColor: "#e5e7eb" }}>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-bold" style={{ color: "#111" }}>Athena 쿼리 결과</h3>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setIdx((i) => i - 1)} className="px-2 py-1 text-xs border rounded-sm" style={{ borderColor: "#ddd" }}>◀</button>
+          <span className="text-xs font-mono" style={{ color: "#666" }}>[{((idx % queries.length) + queries.length) % queries.length + 1}/{queries.length}] {q.label}</span>
+          <button onClick={() => setIdx((i) => i + 1)} className="px-2 py-1 text-xs border rounded-sm" style={{ borderColor: "#ddd" }}>▶</button>
+        </div>
+      </div>
+      <textarea readOnly value={q.sql ?? ""} rows={2}
+        className="w-full p-3 text-xs font-mono border rounded-sm mb-2 resize-none"
+        style={{ background: "#f9fafb", borderColor: "#e5e7eb", color: "#444" }} />
+      {q.error
+        ? <p className="text-xs mb-2" style={{ color: "#ef4444" }}>❌ {q.error}</p>
+        : <p className="text-xs mb-2" style={{ color: "#10b981" }}>✅ {q.rowCount}건</p>
+      }
+      {!q.error && (q.rows?.length ?? 0) > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr style={{ background: "#f9f9f9" }}>
+                {(q.headers ?? []).map((h) => (
+                  <th key={h} className="px-3 py-2 text-left font-medium" style={{ color: "#888" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(q.rows ?? []).map((row, i) => (
+                <tr key={i} style={{ borderBottom: "1px solid #f5f5f5" }}>
+                  {(q.headers ?? []).map((h) => (
+                    <td key={h} className="px-3 py-2 font-mono" style={{ color: "#444" }}>{row[h] ?? ""}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReportsCard({ reports }: { reports: NonNullable<OpsData["reports"]> }) {
+  return (
+    <div className="bg-white border p-5" style={{ borderColor: "#e5e7eb" }}>
+      <h3 className="text-sm font-bold mb-4" style={{ color: "#111" }}>최근 자동 생성 리포트</h3>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr style={{ background: "#f9f9f9" }}>
+              {["날짜", "타입", "제목", "S3"].map((h) => (
+                <th key={h} className="px-3 py-2 text-left font-medium" style={{ color: "#888" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {reports.map((r, i) => (
+              <tr key={i} style={{ borderBottom: "1px solid #f5f5f5" }}>
+                <td className="px-3 py-2 font-mono" style={{ color: "#444" }}>{r.reportDate ?? "-"}</td>
+                <td className="px-3 py-2">
+                  <span className="px-2 py-0.5 rounded-sm" style={{ background: "#eff6ff", color: "#1d4ed8" }}>{r.reportType ?? "-"}</span>
+                </td>
+                <td className="px-3 py-2" style={{ color: "#333" }}>{r.title ?? "-"}</td>
+                <td className="px-3 py-2 font-mono truncate max-w-xs" style={{ color: "#aaa" }}>{(r.s3Url ?? "").replace("s3://", "")}</td>
+              </tr>
+            ))}
+            {reports.length === 0 && (
+              <tr><td colSpan={4} className="px-3 py-4 text-center" style={{ color: "#bbb" }}>리포트 없음</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+type ChatMessage = { role: "user" | "assistant"; content: string; tools?: string[] };
+
+function AIChatCard({ chatApiBase }: { chatApiBase: string }) {
+  const [messages, setMessages] = useState<ChatMessage[]>([{
+    role: "assistant",
+    content: "안녕하세요. 운영 어시스턴트입니다. 한국어로 자유롭게 질의해주세요.\n도구 6개 (대시보드/리소스/알람/메트릭/Athena SQL/리포트 RAG) 자동 호출.",
+  }]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [sessionId, setSessionId] = useState(() => localStorage.getItem(CHAT_SESSION_KEY) ?? "");
+  const logRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [messages]);
+
+  const SAMPLES = ["오늘 미사용 EBS 알려줘", "최근 1시간 ALB 메트릭 어때?", "지난주 RDS 관련 이슈 보고서 있어?", "최근 일주일간 운영 트렌드 알려줘"];
+
+  async function sendChat(text: string) {
+    if (busy || !text.trim()) return;
+    if (!chatApiBase) {
+      setMessages((m) => [...m, { role: "assistant", content: "⚠️ API URL이 설정되지 않았습니다. 관리자에게 문의하세요." }]);
+      return;
+    }
+    setMessages((m) => [...m, { role: "user", content: text }]);
+    setInput("");
+    setBusy(true);
+    setMessages((m) => [...m, { role: "assistant", content: "🤔 분석 중... (20~40초)" }]);
+    try {
+      const body: Record<string, string> = { input: text };
+      if (sessionId) body.session_id = sessionId;
+      const res = await fetch(`${chatApiBase.replace(/\/$/, "")}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.session_id) {
+        setSessionId(data.session_id);
+        localStorage.setItem(CHAT_SESSION_KEY, data.session_id);
+      }
+      const tools: string[] = [...new Set<string>(
+        (data.trace ?? [])
+          .filter((m: { tool_calls?: { name: string }[] }) => m.tool_calls)
+          .flatMap((m: { tool_calls: { name: string }[] }) => m.tool_calls.map((tc) => tc.name))
+      )];
+      setMessages((m) => [...m.slice(0, -1), { role: "assistant", content: data.answer ?? "(빈 응답)", tools }]);
+    } catch (err) {
+      setMessages((m) => [...m.slice(0, -1), { role: "assistant", content: `❌ 오류: ${(err as Error).message}` }]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="bg-white border p-5" style={{ borderColor: "#e5e7eb" }}>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold" style={{ color: "#111" }}>AI 어시스턴트 (LangGraph V2 — RAG + 멀티턴)</h3>
+        <button onClick={() => {
+          setMessages([{ role: "assistant", content: "새 세션이 시작되었습니다." }]);
+          setSessionId("");
+          localStorage.removeItem(CHAT_SESSION_KEY);
+        }} className="text-xs" style={{ color: "#aaa" }}>대화 새로 시작</button>
+      </div>
+      <p className="text-xs mb-3" style={{ color: "#aaa" }}>
+        한국어로 자유롭게 질의하세요. 같은 세션에서 후속 질문 가능.
+        {sessionId && <span style={{ color: "#10b981" }}> · 세션 활성</span>}
+        {!chatApiBase && <span style={{ color: "#ef4444" }}> · API 미설정</span>}
+      </p>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {SAMPLES.map((s) => (
+          <button key={s} onClick={() => sendChat(s)} disabled={busy}
+            className="text-xs px-3 py-1 border rounded-full disabled:opacity-40"
+            style={{ borderColor: "#ddd", color: "#555" }}>{s}</button>
+        ))}
+      </div>
+      <div ref={logRef} className="space-y-2 max-h-96 overflow-y-auto mb-3 p-3 border rounded-sm"
+        style={{ borderColor: "#e5e7eb", background: "#fafafa" }}>
+        {messages.map((m, i) => (
+          <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={`px-3 py-2 rounded-sm max-w-2xl text-xs whitespace-pre-wrap ${m.role === "user" ? "bg-purple-100" : "bg-white border"}`}
+              style={m.role === "assistant" ? { borderColor: "#e5e7eb" } : {}}>
+              {m.tools && m.tools.length > 0 && (
+                <p className="text-xs mb-1" style={{ color: "#aaa" }}>🔧 {m.tools.join(", ")}</p>
+              )}
+              {m.content}
+            </div>
+          </div>
+        ))}
+      </div>
+      <form onSubmit={(e) => { e.preventDefault(); sendChat(input); }} className="flex gap-2">
+        <input value={input} onChange={(e) => setInput(e.target.value)} disabled={busy}
+          placeholder="예: 오늘 미사용 EBS 알려줘"
+          className="flex-1 border px-3 py-2 text-xs rounded-sm outline-none disabled:opacity-40"
+          style={{ borderColor: "#e5e7eb" }} />
+        <button type="submit" disabled={busy || !input.trim()}
+          className="px-4 py-2 text-xs font-medium rounded-sm disabled:opacity-40"
+          style={{ background: "#7c3aed", color: "#fff" }}>
+          {busy ? "..." : "전송"}
+        </button>
+      </form>
     </div>
   );
 }
@@ -479,15 +744,15 @@ function Pagination({ page, totalPages, onPageChange }: { page: number; totalPag
 const GRAFANA_DASHBOARDS = [
   {
     title: "Kubernetes 클러스터 리소스",
-    url: `${GRAFANA_URL}/d/efa86fd1d0c121a26444b636a3f509a8/kubernetes-compute-resources-cluster?orgId=1&kiosk`,
+    url: `${GRAFANA_URL}/d/efa86fd1d0c121a26444b636a3f509a8/kubernetes-compute-resources-cluster?orgId=1&kiosk&theme=light`,
   },
   {
     title: "Kubernetes 네임스페이스별 리소스",
-    url: `${GRAFANA_URL}/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-namespace=fiveline&kiosk`,
+    url: `${GRAFANA_URL}/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-namespace=fiveline&kiosk&theme=light`,
   },
   {
     title: "Kubernetes Pod 상세",
-    url: `${GRAFANA_URL}/d/6581e46e4e5c7ba40a07646395ef7b23/kubernetes-compute-resources-pod?orgId=1&var-namespace=fiveline&kiosk`,
+    url: `${GRAFANA_URL}/d/6581e46e4e5c7ba40a07646395ef7b23/kubernetes-compute-resources-pod?orgId=1&var-namespace=fiveline&kiosk&theme=light`,
   },
 ];
 
