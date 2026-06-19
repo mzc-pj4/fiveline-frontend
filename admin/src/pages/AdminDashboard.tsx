@@ -882,6 +882,140 @@ function CodeQualityTab() {
   );
 }
 
+type RolloutStatus = {
+  phase: string;
+  in_progress: boolean;
+  current_step_index: number;
+  steps_total: number;
+  current_weight: number;
+  paused: boolean;
+  stable_image: string;
+  canary_image: string;
+};
+
+type RealtimeMetrics = {
+  period_minutes: number;
+  total_requests: number;
+  error_rate: number;
+  error_4xx_rate: number;
+  p99_latency_ms: number;
+};
+
+function CanaryStatusPanel({
+  serviceName,
+  onAction,
+}: {
+  serviceName: string;
+  onAction: (action: "promote" | "abort") => void;
+}) {
+  const [status, setStatus] = useState<RolloutStatus | null>(null);
+  const [metrics, setMetrics] = useState<RealtimeMetrics | null>(null);
+
+  const fetchAll = () => {
+    api.get<RolloutStatus>(`/api/admin/cicd/rollout-status?service=${serviceName}`)
+      .then((r) => setStatus(r.data))
+      .catch(() => setStatus(null));
+    api.get<RealtimeMetrics>(`/api/admin/cicd/realtime-metrics?service=${serviceName}&minutes=5`)
+      .then((r) => setMetrics(r.data))
+      .catch(() => setMetrics(null));
+  };
+
+  useEffect(() => {
+    fetchAll();
+    const id = setInterval(fetchAll, 30000);
+    return () => clearInterval(id);
+  }, [serviceName]);
+
+  if (!status?.in_progress) return null;
+
+  return (
+    <div className="border p-5" style={{ borderColor: "#f59e0b", background: "#fffbeb" }}>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold px-2 py-0.5 rounded-sm" style={{ background: "#f59e0b", color: "#fff" }}>
+            CANARY 진행중
+          </span>
+          <span className="text-sm font-bold" style={{ color: "#111" }}>{serviceName}</span>
+          <span className="text-xs" style={{ color: "#888" }}>
+            Step {status.current_step_index}/{status.steps_total} · 트래픽 {status.current_weight}%
+          </span>
+          {status.paused && (
+            <span className="text-xs px-2 py-0.5 rounded-sm" style={{ background: "#fef2f2", color: "#991b1b" }}>
+              ⏸ 수동 승인 대기
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          {status.paused && (
+            <button
+              onClick={() => onAction("promote")}
+              className="text-xs px-3 py-1.5 font-bold rounded-sm"
+              style={{ background: "#111", color: "#fff" }}
+            >
+              🚀 승인
+            </button>
+          )}
+          <button
+            onClick={() => onAction("abort")}
+            className="text-xs px-3 py-1.5 border rounded-sm font-medium"
+            style={{ borderColor: "#991b1b", color: "#991b1b" }}
+          >
+            ⏪ 롤백
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <div className="flex justify-between text-xs mb-1" style={{ color: "#888" }}>
+          <span>Stable ({100 - status.current_weight}%)</span>
+          <span>Canary ({status.current_weight}%)</span>
+        </div>
+        <div className="h-2 rounded-full overflow-hidden" style={{ background: "#e5e7eb" }}>
+          <div
+            className="h-full rounded-full transition-all"
+            style={{ width: `${status.current_weight}%`, background: "#f59e0b" }}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="p-3 rounded" style={{ background: "#f9fafb" }}>
+          <p className="text-xs mb-1" style={{ color: "#999" }}>Stable 이미지</p>
+          <p className="text-xs font-mono truncate" style={{ color: "#111" }}>{status.stable_image || "-"}</p>
+        </div>
+        <div className="p-3 rounded border" style={{ background: "#fff7ed", borderColor: "#fcd34d" }}>
+          <p className="text-xs mb-1" style={{ color: "#92400e" }}>Canary 이미지 (신규)</p>
+          <p className="text-xs font-mono truncate" style={{ color: "#92400e" }}>{status.canary_image || "-"}</p>
+        </div>
+      </div>
+
+      {metrics && (
+        <div>
+          <p className="text-xs mb-2" style={{ color: "#aaa" }}>실시간 메트릭 (최근 {metrics.period_minutes}분 · 전체 ALB 기준 · 30초 자동갱신)</p>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3 rounded text-center" style={{ background: "#fff" }}>
+              <p className="text-xs mb-0.5" style={{ color: "#999" }}>요청 수</p>
+              <p className="text-lg font-bold" style={{ color: "#111" }}>{metrics.total_requests.toLocaleString()}</p>
+            </div>
+            <div className="p-3 rounded text-center" style={{ background: metrics.error_rate > 5 ? "#fef2f2" : "#fff" }}>
+              <p className="text-xs mb-0.5" style={{ color: "#999" }}>5xx 에러율</p>
+              <p className="text-lg font-bold" style={{ color: metrics.error_rate > 5 ? "#991b1b" : "#111" }}>
+                {metrics.error_rate.toFixed(2)}%
+              </p>
+            </div>
+            <div className="p-3 rounded text-center" style={{ background: metrics.p99_latency_ms > 1000 ? "#fffbeb" : "#fff" }}>
+              <p className="text-xs mb-0.5" style={{ color: "#999" }}>P99 응답시간</p>
+              <p className="text-lg font-bold" style={{ color: metrics.p99_latency_ms > 1000 ? "#92400e" : "#111" }}>
+                {metrics.p99_latency_ms.toLocaleString()}ms
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 type AIOpsDeployment = {
   service_name: string;
   deployed_at: string;
@@ -1045,6 +1179,11 @@ function AIOpsSection() {
           {toast.msg}
         </div>
       )}
+
+      <CanaryStatusPanel
+        serviceName={selectedService}
+        onAction={(action) => setConfirmAction({ action })}
+      />
 
       <div className="flex items-center justify-between">
         <div>
