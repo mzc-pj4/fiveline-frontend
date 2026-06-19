@@ -644,42 +644,194 @@ const AI_STATUS_STYLE: Record<string, { bg: string; color: string; emoji: string
   위험: { bg: "#fef2f2", color: "#991b1b", emoji: "🔴" },
 };
 
+const RISK_STYLE: Record<string, { bg: string; color: string }> = {
+  "낮음": { bg: "#ecfdf5", color: "#065f46" },
+  "중간": { bg: "#fffbeb", color: "#92400e" },
+  "높음": { bg: "#fef2f2", color: "#991b1b" },
+};
+
+const SERVICES_LIST = [
+  { key: "order-service", label: "주문" },
+  { key: "product-service", label: "상품" },
+  { key: "user-service", label: "회원" },
+] as const;
+
+const MIN_REQUESTS_THRESHOLD = 100;
+
+const CW_BASE = "https://ap-northeast-2.console.aws.amazon.com/cloudwatch/home?region=ap-northeast-2";
+
+function buildCloudWatchUrl(deployedAt: string, serviceName: string) {
+  const t = new Date(deployedAt).getTime();
+  const startSec = Math.floor((t - 2 * 60 * 1000) / 1000);
+  const endSec = Math.floor((t + 10 * 60 * 1000) / 1000);
+  const logGroup = encodeURIComponent(`/aws/containerinsights/fiveline/${serviceName}`);
+  return `${CW_BASE}#logsV2:log-groups/log-group/${logGroup};start=${startSec};end=${endSec}`;
+}
+
+function DeltaBadge({ current, prev, unit = "", lowerIsBetter = false }: {
+  current: number; prev: number; unit?: string; lowerIsBetter?: boolean;
+}) {
+  const diff = current - prev;
+  if (Math.abs(diff) < 0.001) return null;
+  const improved = lowerIsBetter ? diff < 0 : diff > 0;
+  const arrow = diff > 0 ? "▲" : "▼";
+  const formatted = Math.abs(diff) < 1 ? Math.abs(diff).toFixed(2) : Math.round(Math.abs(diff)).toLocaleString();
+  return (
+    <span className="text-xs ml-1 font-normal" style={{ color: improved ? "#065f46" : "#991b1b" }}>
+      {arrow} {formatted}{unit}
+    </span>
+  );
+}
+
+function RolloutActionModal({ action, serviceName, onConfirm, onCancel, loading }: {
+  action: "promote" | "abort";
+  serviceName: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)" }}>
+      <div className="bg-white border p-6 max-w-sm w-full mx-4" style={{ borderColor: "#e5e7eb" }}>
+        <h3 className="text-sm font-bold mb-2" style={{ color: "#111" }}>
+          {action === "promote" ? "🚀 카나리 배포 승인" : "⏪ 카나리 배포 롤백"}
+        </h3>
+        <p className="text-xs mb-1" style={{ color: "#666" }}>
+          서비스: <strong>{serviceName}</strong>
+        </p>
+        <p className="text-xs mb-4" style={{ color: "#666" }}>
+          {action === "promote"
+            ? "카나리 트래픽을 100%로 승인(Promote)합니다. 계속하시겠습니까?"
+            : "카나리를 중단하고 이전 버전으로 롤백(Abort)합니다. 계속하시겠습니까?"}
+        </p>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onCancel} disabled={loading}
+            className="px-4 py-1.5 text-xs border rounded-sm disabled:opacity-50"
+            style={{ borderColor: "#ddd", color: "#555" }}>
+            취소
+          </button>
+          <button onClick={onConfirm} disabled={loading}
+            className="px-4 py-1.5 text-xs font-bold rounded-sm disabled:opacity-50"
+            style={{ background: action === "promote" ? "#111" : "#991b1b", color: "#fff" }}>
+            {loading ? "처리중..." : action === "promote" ? "승인" : "롤백"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AIOpsSection() {
+  const [selectedService, setSelectedService] = useState<string>("order-service");
   const [items, setItems] = useState<AIOpsDeployment[]>([]);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
+  const [feedback, setFeedback] = useState<Record<string, "positive" | "negative">>({});
+  const [feedbackSending, setFeedbackSending] = useState<Record<string, boolean>>({});
+  const [confirmAction, setConfirmAction] = useState<{ action: "promote" | "abort" } | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
   useEffect(() => {
     setLoading(true);
-    api.get<{ items: AIOpsDeployment[] }>("/api/admin/aiops/deployments?service=order-service&limit=10")
+    setItems([]);
+    api.get<{ items: AIOpsDeployment[] }>(`/api/admin/aiops/deployments?service=${selectedService}&limit=10`)
       .then((r) => setItems(r.data.items ?? []))
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
-  }, [tick]);
+  }, [selectedService, tick]);
+
+  function showToast(msg: string, type: "success" | "error") {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  }
+
+  async function handleFeedback(itemKey: string, vote: "positive" | "negative") {
+    if (feedback[itemKey] || feedbackSending[itemKey]) return;
+    setFeedbackSending((prev) => ({ ...prev, [itemKey]: true }));
+    try {
+      await api.post("/api/admin/aiops/feedback", { service_name: selectedService, deployed_at: itemKey, feedback: vote });
+    } catch { /* 피드백은 실패해도 UI 반영 */ }
+    setFeedback((prev) => ({ ...prev, [itemKey]: vote }));
+    setFeedbackSending((prev) => ({ ...prev, [itemKey]: false }));
+  }
+
+  async function handleRolloutAction() {
+    if (!confirmAction) return;
+    setActionLoading(true);
+    try {
+      await api.post("/api/admin/cicd/rollout-action", { service_name: selectedService, action: confirmAction.action });
+      showToast(
+        confirmAction.action === "promote" ? "카나리 배포 승인 요청이 전송되었습니다." : "롤백 요청이 전송되었습니다.",
+        "success"
+      );
+    } catch {
+      showToast("요청 처리 중 오류가 발생했습니다.", "error");
+    }
+    setActionLoading(false);
+    setConfirmAction(null);
+  }
 
   return (
     <div className="space-y-4">
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 px-4 py-2 text-xs font-medium"
+          style={{ background: toast.type === "success" ? "#065f46" : "#991b1b", color: "#fff" }}>
+          {toast.msg}
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-bold" style={{ color: "#111" }}>카나리 배포 AIOps 분석 이력</h2>
-          <p className="text-xs mt-0.5" style={{ color: "#999" }}>order-service 배포 후 Bedrock이 분석한 결과 (최근 10건)</p>
+          <p className="text-xs mt-0.5" style={{ color: "#999" }}>배포 후 Bedrock이 분석한 결과 (최근 10건)</p>
         </div>
         <RefreshButton onClick={() => setTick((n) => n + 1)} />
       </div>
+
+      {/* 서비스 탭 */}
+      <div className="flex gap-1">
+        {SERVICES_LIST.map(({ key, label }) => (
+          <button key={key} onClick={() => setSelectedService(key)}
+            className="px-4 py-1.5 text-xs font-medium border rounded-sm transition-colors"
+            style={{
+              background: selectedService === key ? "#111" : "#fff",
+              color: selectedService === key ? "#fff" : "#555",
+              borderColor: selectedService === key ? "#111" : "#ddd",
+            }}>
+            {label} 서비스
+          </button>
+        ))}
+      </div>
+
+      {confirmAction && (
+        <RolloutActionModal
+          action={confirmAction.action}
+          serviceName={selectedService}
+          onConfirm={handleRolloutAction}
+          onCancel={() => setConfirmAction(null)}
+          loading={actionLoading}
+        />
+      )}
 
       {loading ? (
         <p className="text-sm" style={{ color: "#bbb" }}>불러오는 중...</p>
       ) : items.length === 0 ? (
         <div className="bg-white border p-10 text-center" style={{ borderColor: "#e5e7eb" }}>
           <p className="text-sm" style={{ color: "#bbb" }}>분석 이력이 없습니다.</p>
-          <p className="text-xs mt-1" style={{ color: "#ccc" }}>order-service 배포 후 post-canary-analysis job이 완료되면 여기에 표시됩니다.</p>
+          <p className="text-xs mt-1" style={{ color: "#ccc" }}>{selectedService} 배포 후 post-canary-analysis job이 완료되면 여기에 표시됩니다.</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {items.map((item) => {
+          {items.map((item, idx) => {
+            const prevItem = items[idx + 1] ?? null;
             const style = AI_STATUS_STYLE[item.ai_status] ?? { bg: "#f3f4f6", color: "#555", emoji: "⚪" };
             const deployedKr = new Date(item.deployed_at).toLocaleString("ko-KR");
             const shortTag = item.image_tag.length > 30 ? item.image_tag.slice(0, 30) + "..." : item.image_tag;
+            const isLowTraffic = item.total_requests < MIN_REQUESTS_THRESHOLD;
+            const itemKey = item.deployed_at;
+            const fbState = feedback[itemKey];
+            const riskStyle = RISK_STYLE[item.risk_level ?? ""] ?? { bg: "#f3f4f6", color: "#888" };
 
             const hasTrivyData = item.trivy_critical !== undefined;
             const trivyCritical = item.trivy_critical ?? 0;
@@ -689,16 +841,10 @@ function AIOpsSection() {
             const trivyTotal = trivyCritical + trivyHigh + trivyMedium + trivyLow;
             const error4xxRate = item.error_4xx_rate ?? 0;
             const error4xxCount = item.error_4xx_count ?? 0;
-
-            const RISK_STYLE: Record<string, { bg: string; color: string }> = {
-              "낮음": { bg: "#ecfdf5", color: "#065f46" },
-              "중간": { bg: "#fffbeb", color: "#92400e" },
-              "높음": { bg: "#fef2f2", color: "#991b1b" },
-            };
-            const riskStyle = RISK_STYLE[item.risk_level ?? ""] ?? { bg: "#f3f4f6", color: "#888" };
+            const cwUrl = buildCloudWatchUrl(item.deployed_at, selectedService);
 
             return (
-              <div key={item.deployed_at} className="bg-white border p-5" style={{ borderColor: "#e5e7eb" }}>
+              <div key={itemKey} className="bg-white border p-5" style={{ borderColor: "#e5e7eb" }}>
                 {/* 헤더 */}
                 <div className="flex items-start justify-between gap-4 mb-4">
                   <div>
@@ -717,43 +863,87 @@ function AIOpsSection() {
                     <span className="text-xs px-2.5 py-1 rounded-sm font-bold" style={{ background: style.bg, color: style.color }}>
                       {style.emoji} {item.ai_status}
                     </span>
-                    <span className="text-xs px-2.5 py-1 border rounded-sm font-medium" style={{ borderColor: "#e5e7eb", color: "#555" }}>
-                      {item.ai_recommendation}
-                    </span>
+                    {/* 액션 버튼 */}
+                    {item.ai_recommendation === "계속진행" ? (
+                      <button
+                        onClick={() => setConfirmAction({ action: "promote" })}
+                        className="text-xs px-2.5 py-1 border rounded-sm font-medium"
+                        style={{ borderColor: "#111", color: "#111" }}>
+                        🚀 카나리 승인
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmAction({ action: "abort" })}
+                        className="text-xs px-2.5 py-1 border rounded-sm font-medium"
+                        style={{ borderColor: "#991b1b", color: "#991b1b" }}>
+                        ⏪ 롤백
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                {/* 메트릭 4열 */}
+                {/* 저트래픽 경고 */}
+                {isLowTraffic && (
+                  <div className="flex items-center gap-2 mb-3 p-2.5 rounded"
+                    style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
+                    <span style={{ fontSize: 14 }}>⚠️</span>
+                    <p className="text-xs" style={{ color: "#92400e" }}>
+                      <strong>낮은 트래픽 주의:</strong> 총 {item.total_requests}건으로 통계적으로 유의미하지 않을 수 있습니다.
+                      (권장: {MIN_REQUESTS_THRESHOLD}건 이상) AI 판단을 참고 용도로만 활용하세요.
+                    </p>
+                  </div>
+                )}
+
+                {/* 메트릭 4열 + 베이스라인 비교 */}
                 <div className="grid grid-cols-4 gap-3 mb-3">
                   <div className="p-3 rounded" style={{ background: "#f9fafb" }}>
                     <p className="text-xs mb-0.5" style={{ color: "#999" }}>총 요청</p>
-                    <p className="text-base font-bold" style={{ color: "#111" }}>{item.total_requests.toLocaleString()}건</p>
+                    <p className="text-base font-bold" style={{ color: "#111" }}>
+                      {item.total_requests.toLocaleString()}건
+                      {prevItem && <DeltaBadge current={item.total_requests} prev={prevItem.total_requests} unit="건" />}
+                    </p>
+                    {prevItem && <p className="text-xs mt-0.5" style={{ color: "#ccc" }}>이전: {prevItem.total_requests.toLocaleString()}건</p>}
                   </div>
                   <div className="p-3 rounded" style={{ background: item.error_rate > 5 ? "#fef2f2" : "#f9fafb" }}>
                     <p className="text-xs mb-0.5" style={{ color: "#999" }}>5xx 에러율</p>
                     <p className="text-base font-bold" style={{ color: item.error_rate > 5 ? "#991b1b" : "#111" }}>
                       {item.error_rate.toFixed(2)}%
-                      <span className="text-xs font-normal ml-1" style={{ color: "#aaa" }}>({item.error_count}건)</span>
+                      {prevItem && <DeltaBadge current={item.error_rate} prev={prevItem.error_rate} unit="%" lowerIsBetter />}
+                    </p>
+                    <p className="text-xs mt-0.5">
+                      <a href={cwUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#6366f1" }}>
+                        {item.error_count}건 → CloudWatch ↗
+                      </a>
+                      {prevItem && <span style={{ color: "#ccc" }}> | 이전: {prevItem.error_rate.toFixed(2)}%</span>}
                     </p>
                   </div>
                   <div className="p-3 rounded" style={{ background: error4xxRate > 20 ? "#fffbeb" : "#f9fafb" }}>
                     <p className="text-xs mb-0.5" style={{ color: "#999" }}>4xx 에러율</p>
                     <p className="text-base font-bold" style={{ color: error4xxRate > 20 ? "#92400e" : "#111" }}>
                       {error4xxRate.toFixed(2)}%
-                      <span className="text-xs font-normal ml-1" style={{ color: "#aaa" }}>({error4xxCount}건)</span>
+                      {prevItem && <DeltaBadge current={error4xxRate} prev={prevItem.error_4xx_rate ?? 0} unit="%" lowerIsBetter />}
+                    </p>
+                    <p className="text-xs mt-0.5">
+                      <a href={cwUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#6366f1" }}>
+                        {error4xxCount}건 → CloudWatch ↗
+                      </a>
+                      {prevItem && <span style={{ color: "#ccc" }}> | 이전: {(prevItem.error_4xx_rate ?? 0).toFixed(2)}%</span>}
                     </p>
                   </div>
                   <div className="p-3 rounded" style={{ background: item.p99_latency_ms > 1000 ? "#fffbeb" : "#f9fafb" }}>
                     <p className="text-xs mb-0.5" style={{ color: "#999" }}>P99 응답시간</p>
                     <p className="text-base font-bold" style={{ color: item.p99_latency_ms > 1000 ? "#92400e" : "#111" }}>
                       {item.p99_latency_ms.toLocaleString()}ms
+                      {prevItem && <DeltaBadge current={item.p99_latency_ms} prev={prevItem.p99_latency_ms} unit="ms" lowerIsBetter />}
                     </p>
+                    {prevItem && <p className="text-xs mt-0.5" style={{ color: "#ccc" }}>이전: {prevItem.p99_latency_ms.toLocaleString()}ms</p>}
                   </div>
                 </div>
 
                 {/* Trivy 보안 스캔 */}
                 {hasTrivyData && (
-                  <div className="flex items-center gap-2 mb-3 p-3 rounded" style={{ background: trivyCritical > 0 ? "#fef2f2" : trivyHigh > 0 ? "#fffbeb" : "#f0fdf4" }}>
+                  <div className="flex items-center gap-2 mb-3 p-3 rounded"
+                    style={{ background: trivyCritical > 0 ? "#fef2f2" : trivyHigh > 0 ? "#fffbeb" : "#f0fdf4" }}>
                     <span className="text-xs font-medium shrink-0" style={{ color: "#666" }}>이미지 보안 스캔</span>
                     <div className="flex items-center gap-2 flex-wrap">
                       {[
@@ -771,13 +961,34 @@ function AIOpsSection() {
                   </div>
                 )}
 
-                {/* AI 판단 근거 */}
+                {/* AI 판단 근거 + 피드백 */}
                 <div className="p-3 rounded" style={{ background: "#f9fafb" }}>
                   <p className="text-xs font-medium mb-1" style={{ color: "#666" }}>AI 판단 근거</p>
                   <p className="text-sm" style={{ color: "#444" }}>{item.ai_reason}</p>
                   {item.risk_reason && (
                     <p className="text-xs mt-1" style={{ color: "#888" }}>배포 위험: {item.risk_reason}</p>
                   )}
+                  <div className="flex items-center gap-2 mt-2 pt-2" style={{ borderTop: "1px solid #f0f0f0" }}>
+                    <span className="text-xs" style={{ color: "#bbb" }}>AI 판단이 유용했나요?</span>
+                    {fbState ? (
+                      <span className="text-xs" style={{ color: "#888" }}>
+                        {fbState === "positive" ? "👍 도움이 됐어요" : "👎 개선이 필요해요"} · 피드백 감사합니다
+                      </span>
+                    ) : (
+                      <>
+                        <button onClick={() => handleFeedback(itemKey, "positive")} disabled={feedbackSending[itemKey]}
+                          className="text-xs px-2 py-0.5 border rounded-sm disabled:opacity-50"
+                          style={{ borderColor: "#e5e7eb", color: "#555" }}>
+                          👍 유용함
+                        </button>
+                        <button onClick={() => handleFeedback(itemKey, "negative")} disabled={feedbackSending[itemKey]}
+                          className="text-xs px-2 py-0.5 border rounded-sm disabled:opacity-50"
+                          style={{ borderColor: "#e5e7eb", color: "#555" }}>
+                          👎 부정확함
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             );
