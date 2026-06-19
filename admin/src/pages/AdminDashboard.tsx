@@ -1290,10 +1290,10 @@ function AIOpsSection() {
         </div>
       ) : (
         <div className="space-y-4">
-          {groupedDeployments.map((group) => {
+          {groupedDeployments.map((group, idx) => {
             const item = group.latest;
             const hasSteps = group.steps.some(s => s.step_index != null);
-            const prevItem = null;
+            const prevItem: AIOpsDeployment | null = groupedDeployments[idx + 1]?.latest ?? null;
             const style = AI_STATUS_STYLE[item.ai_status] ?? { bg: "#f3f4f6", color: "#555", emoji: "⚪" };
             const deployedKr = new Date(item.deployed_at).toLocaleString("ko-KR");
             const shortTag = item.image_tag.length > 30 ? item.image_tag.slice(0, 30) + "..." : item.image_tag;
