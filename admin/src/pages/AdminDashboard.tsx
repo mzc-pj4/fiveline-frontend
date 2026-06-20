@@ -1169,6 +1169,237 @@ function RolloutActionModal({ action, serviceName, onConfirm, onCancel, loading 
   );
 }
 
+function StepTimeline({ steps }: { steps: AIOpsDeployment[] }) {
+  return (
+    <div className="mb-4 p-3 rounded" style={{ background: "#f9fafb" }}>
+      <p className="text-xs font-medium mb-2" style={{ color: "#666" }}>단계별 AI 분석</p>
+      <div className="flex gap-2 flex-wrap">
+        {steps.map((step) => {
+          const stepStyle = AI_STATUS_STYLE[step.ai_status] ?? { bg: "#f3f4f6", color: "#555", emoji: "⚪" };
+          return (
+            <div key={step.deployed_at} className="flex-1 min-w-0 border rounded p-2" style={{ borderColor: "#e5e7eb", background: "#fff" }}>
+              <div className="flex items-center gap-1 mb-1">
+                <span className="text-xs font-bold px-1.5 py-0.5 rounded-sm" style={{ background: "#f59e0b", color: "#fff" }}>
+                  {step.canary_weight ?? "?"}%
+                </span>
+                <span className="text-xs font-medium" style={{ color: stepStyle.color }}>
+                  {stepStyle.emoji} {step.ai_status}
+                </span>
+              </div>
+              <p className="text-xs truncate" style={{ color: "#666" }}>{step.ai_reason}</p>
+              <div className="flex gap-2 mt-1 text-xs" style={{ color: "#aaa" }}>
+                <span>에러 {step.error_rate.toFixed(1)}%</span>
+                <span>P99 {step.p99_latency_ms}ms</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MetricsGrid({ item, prevItem, cwUrl }: { item: AIOpsDeployment; prevItem: AIOpsDeployment | null; cwUrl: string }) {
+  const error4xxRate = item.error_4xx_rate ?? 0;
+  const error4xxCount = item.error_4xx_count ?? 0;
+  const errBg = item.error_rate > 5 ? "#fef2f2" : "#f9fafb";
+  const errColor = item.error_rate > 5 ? "#991b1b" : "#111";
+  const e4xxBg = error4xxRate > 20 ? "#fffbeb" : "#f9fafb";
+  const e4xxColor = error4xxRate > 20 ? "#92400e" : "#111";
+  const p99Bg = item.p99_latency_ms > 1000 ? "#fffbeb" : "#f9fafb";
+  const p99Color = item.p99_latency_ms > 1000 ? "#92400e" : "#111";
+  return (
+    <div className="grid grid-cols-4 gap-3 mb-3">
+      <div className="p-3 rounded" style={{ background: "#f9fafb" }}>
+        <p className="text-xs mb-0.5" style={{ color: "#999" }}>총 요청</p>
+        <p className="text-base font-bold" style={{ color: "#111" }}>
+          {item.total_requests.toLocaleString()}건
+          {prevItem && <DeltaBadge current={item.total_requests} prev={prevItem.total_requests} unit="건" />}
+        </p>
+        {prevItem && <p className="text-xs mt-0.5" style={{ color: "#ccc" }}>이전: {prevItem.total_requests.toLocaleString()}건</p>}
+      </div>
+      <div className="p-3 rounded" style={{ background: errBg }}>
+        <p className="text-xs mb-0.5" style={{ color: "#999" }}>5xx 에러율</p>
+        <p className="text-base font-bold" style={{ color: errColor }}>
+          {item.error_rate.toFixed(2)}%
+          {prevItem && <DeltaBadge current={item.error_rate} prev={prevItem.error_rate} unit="%" lowerIsBetter />}
+        </p>
+        <p className="text-xs mt-0.5">
+          <a href={cwUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#6366f1" }}>
+            {item.error_count}건 → CloudWatch ↗
+          </a>
+          {prevItem && <span style={{ color: "#ccc" }}> | 이전: {prevItem.error_rate.toFixed(2)}%</span>}
+        </p>
+      </div>
+      <div className="p-3 rounded" style={{ background: e4xxBg }}>
+        <p className="text-xs mb-0.5" style={{ color: "#999" }}>4xx 에러율</p>
+        <p className="text-base font-bold" style={{ color: e4xxColor }}>
+          {error4xxRate.toFixed(2)}%
+          {prevItem && <DeltaBadge current={error4xxRate} prev={prevItem.error_4xx_rate ?? 0} unit="%" lowerIsBetter />}
+        </p>
+        <p className="text-xs mt-0.5">
+          <a href={cwUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#6366f1" }}>
+            {error4xxCount}건 → CloudWatch ↗
+          </a>
+          {prevItem && <span style={{ color: "#ccc" }}> | 이전: {(prevItem.error_4xx_rate ?? 0).toFixed(2)}%</span>}
+        </p>
+      </div>
+      <div className="p-3 rounded" style={{ background: p99Bg }}>
+        <p className="text-xs mb-0.5" style={{ color: "#999" }}>P99 응답시간</p>
+        <p className="text-base font-bold" style={{ color: p99Color }}>
+          {item.p99_latency_ms.toLocaleString()}ms
+          {prevItem && <DeltaBadge current={item.p99_latency_ms} prev={prevItem.p99_latency_ms} unit="ms" lowerIsBetter />}
+        </p>
+        {prevItem && <p className="text-xs mt-0.5" style={{ color: "#ccc" }}>이전: {prevItem.p99_latency_ms.toLocaleString()}ms</p>}
+      </div>
+    </div>
+  );
+}
+
+function TrivyScan({ item }: { item: AIOpsDeployment }) {
+  const critical = item.trivy_critical ?? 0;
+  const high = item.trivy_high ?? 0;
+  const medium = item.trivy_medium ?? 0;
+  const low = item.trivy_low ?? 0;
+  const total = critical + high + medium + low;
+  const bg = critical > 0 ? "#fef2f2" : high > 0 ? "#fffbeb" : "#f0fdf4";
+  const badges = [
+    { label: "CRITICAL", count: critical, color: critical > 0 ? "#991b1b" : "#aaa", bg: critical > 0 ? "#fef2f2" : "#f3f4f6" },
+    { label: "HIGH",     count: high,     color: high > 0     ? "#92400e" : "#aaa", bg: high > 0     ? "#fffbeb" : "#f3f4f6" },
+    { label: "MEDIUM",   count: medium,   color: medium > 0   ? "#1e40af" : "#aaa", bg: medium > 0   ? "#eff6ff" : "#f3f4f6" },
+    { label: "LOW",      count: low,      color: "#aaa",                             bg: "#f3f4f6" },
+  ];
+  return (
+    <div className="flex items-center gap-2 mb-3 p-3 rounded" style={{ background: bg }}>
+      <span className="text-xs font-medium shrink-0" style={{ color: "#666" }}>이미지 보안 스캔</span>
+      <div className="flex items-center gap-2 flex-wrap">
+        {badges.map(({ label, count, color, bg: badgeBg }) => (
+          <span key={label} className="text-xs px-2 py-0.5 rounded font-mono font-bold" style={{ background: badgeBg, color }}>
+            {label} {count}
+          </span>
+        ))}
+        {total === 0 && <span className="text-xs" style={{ color: "#065f46" }}>취약점 없음 ✓</span>}
+      </div>
+    </div>
+  );
+}
+
+function AiFeedback({ item, itemKey, fbState, feedbackSending, onFeedback }: {
+  item: AIOpsDeployment;
+  itemKey: string;
+  fbState: "positive" | "negative" | undefined;
+  feedbackSending: Record<string, boolean>;
+  onFeedback: (key: string, vote: "positive" | "negative") => void;
+}) {
+  return (
+    <div className="p-3 rounded" style={{ background: "#f9fafb" }}>
+      <p className="text-xs font-medium mb-1" style={{ color: "#666" }}>AI 판단 근거</p>
+      <p className="text-sm" style={{ color: "#444" }}>{item.ai_reason}</p>
+      {item.risk_reason && <p className="text-xs mt-1" style={{ color: "#888" }}>배포 위험: {item.risk_reason}</p>}
+      <div className="flex items-center gap-2 mt-2 pt-2" style={{ borderTop: "1px solid #f0f0f0" }}>
+        <span className="text-xs" style={{ color: "#bbb" }}>AI 판단이 유용했나요?</span>
+        {fbState ? (
+          <span className="text-xs" style={{ color: "#888" }}>
+            {fbState === "positive" ? "👍 도움이 됐어요" : "👎 개선이 필요해요"} · 피드백 감사합니다
+          </span>
+        ) : (
+          <>
+            <button onClick={() => onFeedback(itemKey, "positive")} disabled={feedbackSending[itemKey]}
+              className="text-xs px-2 py-0.5 border rounded-sm disabled:opacity-50"
+              style={{ borderColor: "#e5e7eb", color: "#555" }}>
+              👍 유용함
+            </button>
+            <button onClick={() => onFeedback(itemKey, "negative")} disabled={feedbackSending[itemKey]}
+              className="text-xs px-2 py-0.5 border rounded-sm disabled:opacity-50"
+              style={{ borderColor: "#e5e7eb", color: "#555" }}>
+              👎 부정확함
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DeploymentCard({
+  group, prevItem, selectedService, feedback, feedbackSending, onFeedback, onAction,
+}: {
+  group: DeploymentGroup;
+  prevItem: AIOpsDeployment | null;
+  selectedService: string;
+  feedback: Record<string, "positive" | "negative">;
+  feedbackSending: Record<string, boolean>;
+  onFeedback: (itemKey: string, vote: "positive" | "negative") => void;
+  onAction: (action: { action: "promote" | "abort" }) => void;
+}) {
+  const item = group.latest;
+  const hasSteps = group.steps.some(s => s.step_index != null);
+  const style = AI_STATUS_STYLE[item.ai_status] ?? { bg: "#f3f4f6", color: "#555", emoji: "⚪" };
+  const deployedKr = new Date(item.deployed_at).toLocaleString("ko-KR");
+  const shortTag = item.image_tag.length > 30 ? item.image_tag.slice(0, 30) + "..." : item.image_tag;
+  const isLowTraffic = item.total_requests < MIN_REQUESTS_THRESHOLD;
+  const itemKey = item.image_tag;
+  const riskStyle = RISK_STYLE[item.risk_level ?? ""] ?? { bg: "#f3f4f6", color: "#888" };
+  const cwUrl = buildCloudWatchUrl(item.deployed_at, selectedService);
+
+  return (
+    <div className="bg-white border p-5" style={{ borderColor: "#e5e7eb" }}>
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-sm font-bold" style={{ color: "#111" }}>{item.service_name}</span>
+            <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ background: "#f3f4f6", color: "#555" }}>{shortTag}</span>
+          </div>
+          <p className="text-xs" style={{ color: "#aaa" }}>{deployedKr}</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+          {item.risk_level && (
+            <span className="text-xs px-2.5 py-1 rounded-sm font-medium" style={{ background: riskStyle.bg, color: riskStyle.color }}>
+              위험도 {item.risk_level}
+            </span>
+          )}
+          <span className="text-xs px-2.5 py-1 rounded-sm font-bold" style={{ background: style.bg, color: style.color }}>
+            {style.emoji} {item.ai_status}
+          </span>
+          {item.ai_recommendation === "계속진행" ? (
+            <button onClick={() => onAction({ action: "promote" })}
+              className="text-xs px-2.5 py-1 border rounded-sm font-medium"
+              style={{ borderColor: "#111", color: "#111" }}>
+              🚀 카나리 승인
+            </button>
+          ) : (
+            <button onClick={() => onAction({ action: "abort" })}
+              className="text-xs px-2.5 py-1 border rounded-sm font-medium"
+              style={{ borderColor: "#991b1b", color: "#991b1b" }}>
+              ⏪ 롤백
+            </button>
+          )}
+        </div>
+      </div>
+      {hasSteps && <StepTimeline steps={group.steps} />}
+      {isLowTraffic && (
+        <div className="flex items-center gap-2 mb-3 p-2.5 rounded"
+          style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
+          <span style={{ fontSize: 14 }}>⚠️</span>
+          <p className="text-xs" style={{ color: "#92400e" }}>
+            <strong>낮은 트래픽 주의:</strong> 총 {item.total_requests}건으로 통계적으로 유의미하지 않을 수 있습니다.
+            (권장: {MIN_REQUESTS_THRESHOLD}건 이상) AI 판단을 참고 용도로만 활용하세요.
+          </p>
+        </div>
+      )}
+      <MetricsGrid item={item} prevItem={prevItem} cwUrl={cwUrl} />
+      {item.trivy_critical !== undefined && <TrivyScan item={item} />}
+      <AiFeedback
+        item={item}
+        itemKey={itemKey}
+        fbState={feedback[itemKey]}
+        feedbackSending={feedbackSending}
+        onFeedback={onFeedback}
+      />
+    </div>
+  );
+}
+
 function AIOpsSection() {
   const [selectedService, setSelectedService] = useState<string>("order-service");
   const [items, setItems] = useState<AIOpsDeployment[]>([]);
@@ -1290,207 +1521,18 @@ function AIOpsSection() {
         </div>
       ) : (
         <div className="space-y-4">
-          {groupedDeployments.map((group, idx) => {
-            const item = group.latest;
-            const hasSteps = group.steps.some(s => s.step_index != null);
-            const prevItem: AIOpsDeployment | null = groupedDeployments[idx + 1]?.latest ?? null;
-            const style = AI_STATUS_STYLE[item.ai_status] ?? { bg: "#f3f4f6", color: "#555", emoji: "⚪" };
-            const deployedKr = new Date(item.deployed_at).toLocaleString("ko-KR");
-            const shortTag = item.image_tag.length > 30 ? item.image_tag.slice(0, 30) + "..." : item.image_tag;
-            const isLowTraffic = item.total_requests < MIN_REQUESTS_THRESHOLD;
-            const itemKey = item.image_tag;
-            const fbState = feedback[itemKey];
-            const riskStyle = RISK_STYLE[item.risk_level ?? ""] ?? { bg: "#f3f4f6", color: "#888" };
-
-            const hasTrivyData = item.trivy_critical !== undefined;
-            const trivyCritical = item.trivy_critical ?? 0;
-            const trivyHigh = item.trivy_high ?? 0;
-            const trivyMedium = item.trivy_medium ?? 0;
-            const trivyLow = item.trivy_low ?? 0;
-            const trivyTotal = trivyCritical + trivyHigh + trivyMedium + trivyLow;
-            const error4xxRate = item.error_4xx_rate ?? 0;
-            const error4xxCount = item.error_4xx_count ?? 0;
-            const cwUrl = buildCloudWatchUrl(item.deployed_at, selectedService);
-
-            return (
-              <div key={itemKey} className="bg-white border p-5" style={{ borderColor: "#e5e7eb" }}>
-                {/* 헤더 */}
-                <div className="flex items-start justify-between gap-4 mb-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-bold" style={{ color: "#111" }}>{item.service_name}</span>
-                      <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ background: "#f3f4f6", color: "#555" }}>{shortTag}</span>
-                    </div>
-                    <p className="text-xs" style={{ color: "#aaa" }}>{deployedKr}</p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                    {item.risk_level && (
-                      <span className="text-xs px-2.5 py-1 rounded-sm font-medium" style={{ background: riskStyle.bg, color: riskStyle.color }}>
-                        위험도 {item.risk_level}
-                      </span>
-                    )}
-                    <span className="text-xs px-2.5 py-1 rounded-sm font-bold" style={{ background: style.bg, color: style.color }}>
-                      {style.emoji} {item.ai_status}
-                    </span>
-                    {/* 액션 버튼 */}
-                    {item.ai_recommendation === "계속진행" ? (
-                      <button
-                        onClick={() => setConfirmAction({ action: "promote" })}
-                        className="text-xs px-2.5 py-1 border rounded-sm font-medium"
-                        style={{ borderColor: "#111", color: "#111" }}>
-                        🚀 카나리 승인
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => setConfirmAction({ action: "abort" })}
-                        className="text-xs px-2.5 py-1 border rounded-sm font-medium"
-                        style={{ borderColor: "#991b1b", color: "#991b1b" }}>
-                        ⏪ 롤백
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* 단계별 타임라인 */}
-                {hasSteps && (
-                  <div className="mb-4 p-3 rounded" style={{ background: "#f9fafb" }}>
-                    <p className="text-xs font-medium mb-2" style={{ color: "#666" }}>단계별 AI 분석</p>
-                    <div className="flex gap-2 flex-wrap">
-                      {group.steps.map((step) => {
-                        const stepStyle = AI_STATUS_STYLE[step.ai_status] ?? { bg: "#f3f4f6", color: "#555", emoji: "⚪" };
-                        return (
-                          <div key={step.deployed_at} className="flex-1 min-w-0 border rounded p-2" style={{ borderColor: "#e5e7eb", background: "#fff" }}>
-                            <div className="flex items-center gap-1 mb-1">
-                              <span className="text-xs font-bold px-1.5 py-0.5 rounded-sm" style={{ background: "#f59e0b", color: "#fff" }}>
-                                {step.canary_weight ?? "?"}%
-                              </span>
-                              <span className="text-xs font-medium" style={{ color: stepStyle.color }}>
-                                {stepStyle.emoji} {step.ai_status}
-                              </span>
-                            </div>
-                            <p className="text-xs truncate" style={{ color: "#666" }}>{step.ai_reason}</p>
-                            <div className="flex gap-2 mt-1 text-xs" style={{ color: "#aaa" }}>
-                              <span>에러 {step.error_rate.toFixed(1)}%</span>
-                              <span>P99 {step.p99_latency_ms}ms</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* 저트래픽 경고 */}
-                {isLowTraffic && (
-                  <div className="flex items-center gap-2 mb-3 p-2.5 rounded"
-                    style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
-                    <span style={{ fontSize: 14 }}>⚠️</span>
-                    <p className="text-xs" style={{ color: "#92400e" }}>
-                      <strong>낮은 트래픽 주의:</strong> 총 {item.total_requests}건으로 통계적으로 유의미하지 않을 수 있습니다.
-                      (권장: {MIN_REQUESTS_THRESHOLD}건 이상) AI 판단을 참고 용도로만 활용하세요.
-                    </p>
-                  </div>
-                )}
-
-                {/* 메트릭 4열 + 베이스라인 비교 */}
-                <div className="grid grid-cols-4 gap-3 mb-3">
-                  <div className="p-3 rounded" style={{ background: "#f9fafb" }}>
-                    <p className="text-xs mb-0.5" style={{ color: "#999" }}>총 요청</p>
-                    <p className="text-base font-bold" style={{ color: "#111" }}>
-                      {item.total_requests.toLocaleString()}건
-                      {prevItem && <DeltaBadge current={item.total_requests} prev={prevItem.total_requests} unit="건" />}
-                    </p>
-                    {prevItem && <p className="text-xs mt-0.5" style={{ color: "#ccc" }}>이전: {prevItem.total_requests.toLocaleString()}건</p>}
-                  </div>
-                  <div className="p-3 rounded" style={{ background: item.error_rate > 5 ? "#fef2f2" : "#f9fafb" }}>
-                    <p className="text-xs mb-0.5" style={{ color: "#999" }}>5xx 에러율</p>
-                    <p className="text-base font-bold" style={{ color: item.error_rate > 5 ? "#991b1b" : "#111" }}>
-                      {item.error_rate.toFixed(2)}%
-                      {prevItem && <DeltaBadge current={item.error_rate} prev={prevItem.error_rate} unit="%" lowerIsBetter />}
-                    </p>
-                    <p className="text-xs mt-0.5">
-                      <a href={cwUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#6366f1" }}>
-                        {item.error_count}건 → CloudWatch ↗
-                      </a>
-                      {prevItem && <span style={{ color: "#ccc" }}> | 이전: {prevItem.error_rate.toFixed(2)}%</span>}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded" style={{ background: error4xxRate > 20 ? "#fffbeb" : "#f9fafb" }}>
-                    <p className="text-xs mb-0.5" style={{ color: "#999" }}>4xx 에러율</p>
-                    <p className="text-base font-bold" style={{ color: error4xxRate > 20 ? "#92400e" : "#111" }}>
-                      {error4xxRate.toFixed(2)}%
-                      {prevItem && <DeltaBadge current={error4xxRate} prev={prevItem.error_4xx_rate ?? 0} unit="%" lowerIsBetter />}
-                    </p>
-                    <p className="text-xs mt-0.5">
-                      <a href={cwUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#6366f1" }}>
-                        {error4xxCount}건 → CloudWatch ↗
-                      </a>
-                      {prevItem && <span style={{ color: "#ccc" }}> | 이전: {(prevItem.error_4xx_rate ?? 0).toFixed(2)}%</span>}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded" style={{ background: item.p99_latency_ms > 1000 ? "#fffbeb" : "#f9fafb" }}>
-                    <p className="text-xs mb-0.5" style={{ color: "#999" }}>P99 응답시간</p>
-                    <p className="text-base font-bold" style={{ color: item.p99_latency_ms > 1000 ? "#92400e" : "#111" }}>
-                      {item.p99_latency_ms.toLocaleString()}ms
-                      {prevItem && <DeltaBadge current={item.p99_latency_ms} prev={prevItem.p99_latency_ms} unit="ms" lowerIsBetter />}
-                    </p>
-                    {prevItem && <p className="text-xs mt-0.5" style={{ color: "#ccc" }}>이전: {prevItem.p99_latency_ms.toLocaleString()}ms</p>}
-                  </div>
-                </div>
-
-                {/* Trivy 보안 스캔 */}
-                {hasTrivyData && (
-                  <div className="flex items-center gap-2 mb-3 p-3 rounded"
-                    style={{ background: trivyCritical > 0 ? "#fef2f2" : trivyHigh > 0 ? "#fffbeb" : "#f0fdf4" }}>
-                    <span className="text-xs font-medium shrink-0" style={{ color: "#666" }}>이미지 보안 스캔</span>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {[
-                        { label: "CRITICAL", count: trivyCritical, color: trivyCritical > 0 ? "#991b1b" : "#aaa", bg: trivyCritical > 0 ? "#fef2f2" : "#f3f4f6" },
-                        { label: "HIGH", count: trivyHigh, color: trivyHigh > 0 ? "#92400e" : "#aaa", bg: trivyHigh > 0 ? "#fffbeb" : "#f3f4f6" },
-                        { label: "MEDIUM", count: trivyMedium, color: trivyMedium > 0 ? "#1e40af" : "#aaa", bg: trivyMedium > 0 ? "#eff6ff" : "#f3f4f6" },
-                        { label: "LOW", count: trivyLow, color: "#aaa", bg: "#f3f4f6" },
-                      ].map(({ label, count, color, bg }) => (
-                        <span key={label} className="text-xs px-2 py-0.5 rounded font-mono font-bold" style={{ background: bg, color }}>
-                          {label} {count}
-                        </span>
-                      ))}
-                      {trivyTotal === 0 && <span className="text-xs" style={{ color: "#065f46" }}>취약점 없음 ✓</span>}
-                    </div>
-                  </div>
-                )}
-
-                {/* AI 판단 근거 + 피드백 */}
-                <div className="p-3 rounded" style={{ background: "#f9fafb" }}>
-                  <p className="text-xs font-medium mb-1" style={{ color: "#666" }}>AI 판단 근거</p>
-                  <p className="text-sm" style={{ color: "#444" }}>{item.ai_reason}</p>
-                  {item.risk_reason && (
-                    <p className="text-xs mt-1" style={{ color: "#888" }}>배포 위험: {item.risk_reason}</p>
-                  )}
-                  <div className="flex items-center gap-2 mt-2 pt-2" style={{ borderTop: "1px solid #f0f0f0" }}>
-                    <span className="text-xs" style={{ color: "#bbb" }}>AI 판단이 유용했나요?</span>
-                    {fbState ? (
-                      <span className="text-xs" style={{ color: "#888" }}>
-                        {fbState === "positive" ? "👍 도움이 됐어요" : "👎 개선이 필요해요"} · 피드백 감사합니다
-                      </span>
-                    ) : (
-                      <>
-                        <button onClick={() => handleFeedback(itemKey, "positive")} disabled={feedbackSending[itemKey]}
-                          className="text-xs px-2 py-0.5 border rounded-sm disabled:opacity-50"
-                          style={{ borderColor: "#e5e7eb", color: "#555" }}>
-                          👍 유용함
-                        </button>
-                        <button onClick={() => handleFeedback(itemKey, "negative")} disabled={feedbackSending[itemKey]}
-                          className="text-xs px-2 py-0.5 border rounded-sm disabled:opacity-50"
-                          style={{ borderColor: "#e5e7eb", color: "#555" }}>
-                          👎 부정확함
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {groupedDeployments.map((group, idx) => (
+            <DeploymentCard
+              key={group.image_tag}
+              group={group}
+              prevItem={groupedDeployments[idx + 1]?.latest ?? null}
+              selectedService={selectedService}
+              feedback={feedback}
+              feedbackSending={feedbackSending}
+              onFeedback={handleFeedback}
+              onAction={setConfirmAction}
+            />
+          ))}
         </div>
       )}
     </div>
