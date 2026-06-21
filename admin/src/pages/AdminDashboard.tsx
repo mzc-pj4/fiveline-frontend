@@ -938,7 +938,32 @@ function CanaryStatusPanel({
     return () => clearInterval(id);
   }, [serviceName]);
 
-  if (!status?.in_progress) return null;
+  if (!status) return null;
+
+  if (!status.in_progress) {
+    if (status.phase !== "Healthy") return null;
+    const tagShort = status.stable_image
+      ? status.stable_image.split("-").slice(0, 2).join("-")
+      : null;
+    return (
+      <div className="border p-4 flex items-center gap-3 flex-wrap" style={{ borderColor: "#16a34a", background: "#f0fdf4" }}>
+        <span className="text-xs font-bold px-2 py-0.5 rounded-sm" style={{ background: "#16a34a", color: "#fff" }}>
+          ✅ 배포 완료
+        </span>
+        <span className="text-sm font-bold" style={{ color: "#111" }}>{serviceName}</span>
+        {status.stable_image && (
+          <span
+            className="text-xs font-mono px-2 py-0.5 rounded"
+            style={{ background: "#dcfce7", color: "#14532d" }}
+            title={status.stable_image}
+          >
+            {tagShort || status.stable_image}
+          </span>
+        )}
+        <span className="text-xs" style={{ color: "#6b7280" }}>카나리 배포가 성공적으로 완료되었습니다</span>
+      </div>
+    );
+  }
 
   return (
     <div className="border p-5" style={{ borderColor: "#f59e0b", background: "#fffbeb" }}>
@@ -1073,6 +1098,11 @@ type AIOpsDeployment = {
   trivy_high?: number;
   trivy_medium?: number;
   trivy_low?: number;
+  sonar_coverage?: number | null;
+  sonar_bugs?: number | null;
+  sonar_vulnerabilities?: number | null;
+  sonar_code_smells?: number | null;
+  sonar_quality_gate?: string | null;
   ai_status: string;
   ai_recommendation: string;
   ai_reason: string;
@@ -1284,6 +1314,56 @@ function TrivyScan({ item }: { item: AIOpsDeployment }) {
   );
 }
 
+function SonarQualityPanel({ item }: { item: AIOpsDeployment }) {
+  if (item.sonar_coverage == null && item.sonar_bugs == null) return null;
+
+  const gateColor = item.sonar_quality_gate === "OK"
+    ? { bg: "#f0fdf4", border: "#16a34a", text: "#15803d", label: "PASSED" }
+    : item.sonar_quality_gate === "ERROR"
+    ? { bg: "#fef2f2", border: "#dc2626", text: "#b91c1c", label: "FAILED" }
+    : { bg: "#f9fafb", border: "#d1d5db", text: "#6b7280", label: item.sonar_quality_gate ?? "N/A" };
+
+  return (
+    <div className="mb-3 p-3 rounded border" style={{ background: "#fafafa", borderColor: "#e5e7eb" }}>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-medium" style={{ color: "#555" }}>🔍 SonarCloud 코드 품질</p>
+        {item.sonar_quality_gate && (
+          <span className="text-xs px-2 py-0.5 rounded font-bold border"
+            style={{ background: gateColor.bg, borderColor: gateColor.border, color: gateColor.text }}>
+            Quality Gate {gateColor.label}
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        <div className="text-center p-2 rounded" style={{ background: "#fff", border: "1px solid #e5e7eb" }}>
+          <p className="text-lg font-bold" style={{ color: "#2563eb" }}>
+            {item.sonar_coverage != null ? `${item.sonar_coverage.toFixed(1)}%` : "—"}
+          </p>
+          <p className="text-xs" style={{ color: "#888" }}>커버리지</p>
+        </div>
+        <div className="text-center p-2 rounded" style={{ background: "#fff", border: "1px solid #e5e7eb" }}>
+          <p className="text-lg font-bold" style={{ color: (item.sonar_bugs ?? 0) > 0 ? "#dc2626" : "#16a34a" }}>
+            {item.sonar_bugs ?? "—"}
+          </p>
+          <p className="text-xs" style={{ color: "#888" }}>버그</p>
+        </div>
+        <div className="text-center p-2 rounded" style={{ background: "#fff", border: "1px solid #e5e7eb" }}>
+          <p className="text-lg font-bold" style={{ color: (item.sonar_vulnerabilities ?? 0) > 0 ? "#dc2626" : "#16a34a" }}>
+            {item.sonar_vulnerabilities ?? "—"}
+          </p>
+          <p className="text-xs" style={{ color: "#888" }}>취약점</p>
+        </div>
+        <div className="text-center p-2 rounded" style={{ background: "#fff", border: "1px solid #e5e7eb" }}>
+          <p className="text-lg font-bold" style={{ color: (item.sonar_code_smells ?? 0) > 5 ? "#f59e0b" : "#16a34a" }}>
+            {item.sonar_code_smells ?? "—"}
+          </p>
+          <p className="text-xs" style={{ color: "#888" }}>코드스멜</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AiFeedback({ item, itemKey, fbState, feedbackSending, onFeedback }: {
   item: AIOpsDeployment;
   itemKey: string;
@@ -1322,7 +1402,7 @@ function AiFeedback({ item, itemKey, fbState, feedbackSending, onFeedback }: {
 }
 
 function DeploymentCard({
-  group, prevItem, selectedService, feedback, feedbackSending, onFeedback, onAction,
+  group, prevItem, selectedService, feedback, feedbackSending, onFeedback,
 }: {
   group: DeploymentGroup;
   prevItem: AIOpsDeployment | null;
@@ -1330,7 +1410,6 @@ function DeploymentCard({
   feedback: Record<string, "positive" | "negative">;
   feedbackSending: Record<string, boolean>;
   onFeedback: (itemKey: string, vote: "positive" | "negative") => void;
-  onAction: (action: { action: "promote" | "abort" }) => void;
 }) {
   const item = group.latest;
   const hasSteps = group.steps.some(s => s.step_index != null);
@@ -1361,19 +1440,6 @@ function DeploymentCard({
           <span className="text-xs px-2.5 py-1 rounded-sm font-bold" style={{ background: style.bg, color: style.color }}>
             {style.emoji} {item.ai_status}
           </span>
-          {item.ai_recommendation === "계속진행" ? (
-            <button onClick={() => onAction({ action: "promote" })}
-              className="text-xs px-2.5 py-1 border rounded-sm font-medium"
-              style={{ borderColor: "#111", color: "#111" }}>
-              🚀 카나리 승인
-            </button>
-          ) : (
-            <button onClick={() => onAction({ action: "abort" })}
-              className="text-xs px-2.5 py-1 border rounded-sm font-medium"
-              style={{ borderColor: "#991b1b", color: "#991b1b" }}>
-              ⏪ 롤백
-            </button>
-          )}
         </div>
       </div>
       {hasSteps && <StepTimeline steps={group.steps} />}
@@ -1389,6 +1455,7 @@ function DeploymentCard({
       )}
       <MetricsGrid item={item} prevItem={prevItem} cwUrl={cwUrl} />
       {item.trivy_critical !== undefined && <TrivyScan item={item} />}
+      <SonarQualityPanel item={item} />
       <AiFeedback
         item={item}
         itemKey={itemKey}
@@ -1530,7 +1597,6 @@ function AIOpsSection() {
               feedback={feedback}
               feedbackSending={feedbackSending}
               onFeedback={handleFeedback}
-              onAction={setConfirmAction}
             />
           ))}
         </div>
