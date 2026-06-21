@@ -1347,7 +1347,7 @@ function AiFeedback({ item, itemKey, fbState, feedbackSending, onFeedback }: {
 }
 
 function DeploymentCard({
-  group, prevItem, selectedService, feedback, feedbackSending, onFeedback, onAction,
+  group, prevItem, selectedService, feedback, feedbackSending, onFeedback,
 }: {
   group: DeploymentGroup;
   prevItem: AIOpsDeployment | null;
@@ -1355,7 +1355,6 @@ function DeploymentCard({
   feedback: Record<string, "positive" | "negative">;
   feedbackSending: Record<string, boolean>;
   onFeedback: (itemKey: string, vote: "positive" | "negative") => void;
-  onAction: (action: { action: "promote" | "abort" }) => void;
 }) {
   const item = group.latest;
   const hasSteps = group.steps.some(s => s.step_index != null);
@@ -1386,19 +1385,6 @@ function DeploymentCard({
           <span className="text-xs px-2.5 py-1 rounded-sm font-bold" style={{ background: style.bg, color: style.color }}>
             {style.emoji} {item.ai_status}
           </span>
-          {item.ai_recommendation === "계속진행" ? (
-            <button onClick={() => onAction({ action: "promote" })}
-              className="text-xs px-2.5 py-1 border rounded-sm font-medium"
-              style={{ borderColor: "#111", color: "#111" }}>
-              🚀 카나리 승인
-            </button>
-          ) : (
-            <button onClick={() => onAction({ action: "abort" })}
-              className="text-xs px-2.5 py-1 border rounded-sm font-medium"
-              style={{ borderColor: "#991b1b", color: "#991b1b" }}>
-              ⏪ 롤백
-            </button>
-          )}
         </div>
       </div>
       {hasSteps && <StepTimeline steps={group.steps} />}
@@ -1555,7 +1541,6 @@ function AIOpsSection() {
               feedback={feedback}
               feedbackSending={feedbackSending}
               onFeedback={handleFeedback}
-              onAction={setConfirmAction}
             />
           ))}
         </div>
