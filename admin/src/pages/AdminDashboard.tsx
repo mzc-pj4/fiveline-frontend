@@ -84,7 +84,10 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen" style={{ background: "#f9fafb" }}>
       <div className="border-b bg-white px-6 py-3 flex items-center justify-between" style={{ borderColor: "#e5e7eb" }}>
-        <h1 className="text-base font-black tracking-widest" style={{ color: "#111" }}>FIVELINE 운영자 포털</h1>
+        <h1 className="text-base font-black tracking-widest" style={{ color: "#111" }}>
+          FIVELINE 운영자 포털
+          <span className="ml-2 text-xs font-normal px-1.5 py-0.5 rounded" style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" }}>v2.0</span>
+        </h1>
         <div className="flex items-center gap-4">
           <span className="text-xs" style={{ color: "#666" }}>{user?.name}님</span>
           <button onClick={handleLogout} className="text-xs px-3 py-1.5 border rounded-sm" style={{ borderColor: "#ddd", color: "#555" }}>로그아웃</button>
