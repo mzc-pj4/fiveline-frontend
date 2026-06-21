@@ -940,7 +940,32 @@ function CanaryStatusPanel({
     return () => clearInterval(id);
   }, [serviceName]);
 
-  if (!status?.in_progress) return null;
+  if (!status) return null;
+
+  if (!status.in_progress) {
+    if (status.phase !== "Healthy") return null;
+    const tagShort = status.stable_image
+      ? status.stable_image.split("-").slice(0, 2).join("-")
+      : null;
+    return (
+      <div className="border p-4 flex items-center gap-3 flex-wrap" style={{ borderColor: "#16a34a", background: "#f0fdf4" }}>
+        <span className="text-xs font-bold px-2 py-0.5 rounded-sm" style={{ background: "#16a34a", color: "#fff" }}>
+          ✅ 배포 완료
+        </span>
+        <span className="text-sm font-bold" style={{ color: "#111" }}>{serviceName}</span>
+        {status.stable_image && (
+          <span
+            className="text-xs font-mono px-2 py-0.5 rounded"
+            style={{ background: "#dcfce7", color: "#14532d" }}
+            title={status.stable_image}
+          >
+            {tagShort || status.stable_image}
+          </span>
+        )}
+        <span className="text-xs" style={{ color: "#6b7280" }}>카나리 배포가 성공적으로 완료되었습니다</span>
+      </div>
+    );
+  }
 
   return (
     <div className="border p-5" style={{ borderColor: "#f59e0b", background: "#fffbeb" }}>
