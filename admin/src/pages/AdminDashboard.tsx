@@ -880,6 +880,9 @@ function CodeQualityTab() {
   );
 }
 
+type StepInfo = { type: string; weight?: number; duration?: string };
+type AnalysisRunInfo = { name: string; phase: string; successful: number; failed: number; error: number; started_at: string | null };
+
 type RolloutStatus = {
   phase: string;
   in_progress: boolean;
@@ -887,8 +890,12 @@ type RolloutStatus = {
   steps_total: number;
   current_weight: number;
   paused: boolean;
+  is_manual_pause: boolean;
   stable_image: string;
   canary_image: string;
+  steps_info: StepInfo[];
+  current_step_info: StepInfo | null;
+  analysis_runs: AnalysisRunInfo[];
 };
 
 type RealtimeMetrics = {
@@ -909,6 +916,31 @@ type CanaryProbe = {
   canary_only: boolean;
 };
 
+type LiveAnalysisItem = {
+  step_index: number | null;
+  canary_weight: number | null;
+  total_requests: number;
+  error_rate: number;
+  p99_latency_ms: number;
+  risk_level: string;
+  trivy_critical: number;
+  trivy_high: number;
+  trivy_medium: number;
+  trivy_low: number;
+  ai_status: string | null;
+  ai_recommendation: string | null;
+  ai_reason: string | null;
+};
+
+function stepLabel(step: StepInfo): string {
+  if (step.type === "setWeight") return `트래픽 ${step.weight}%`;
+  if (step.type === "pause_auto") return `대기 ${step.duration}`;
+  if (step.type === "pause_manual") return "최종 승인";
+  if (step.type === "analysis") return "분석";
+  return step.type;
+}
+
+
 function CanaryStatusPanel({
   serviceName,
   onAction,
@@ -919,11 +951,15 @@ function CanaryStatusPanel({
   const [status, setStatus] = useState<RolloutStatus | null>(null);
   const [metrics, setMetrics] = useState<RealtimeMetrics | null>(null);
   const [probe, setProbe] = useState<CanaryProbe | null>(null);
+  const [liveAnalysis, setLiveAnalysis] = useState<LiveAnalysisItem[]>([]);
 
-  const fetchAll = () => {
+  const fetchStatus = () => {
     api.get<RolloutStatus>(`/api/admin/cicd/rollout-status?service=${serviceName}`)
       .then((r) => setStatus(r.data))
       .catch(() => setStatus(null));
+  };
+
+  const fetchMetrics = () => {
     api.get<RealtimeMetrics>(`/api/admin/cicd/realtime-metrics?service=${serviceName}&minutes=5`)
       .then((r) => setMetrics(r.data))
       .catch(() => setMetrics(null));
@@ -932,31 +968,39 @@ function CanaryStatusPanel({
       .catch(() => setProbe(null));
   };
 
+  const fetchLiveAnalysis = (imageTag: string) => {
+    if (!imageTag) return;
+    api.get<{ items: LiveAnalysisItem[] }>(`/api/admin/aiops/live?service=${serviceName}&image_tag=${imageTag}`)
+      .then((r) => setLiveAnalysis(r.data.items ?? []))
+      .catch(() => {});
+  };
+
   useEffect(() => {
-    fetchAll();
-    const id = setInterval(fetchAll, 30000);
-    return () => clearInterval(id);
+    fetchStatus();
+    fetchMetrics();
+    const statusId = setInterval(fetchStatus, 10000);
+    const metricsId = setInterval(fetchMetrics, 30000);
+    return () => { clearInterval(statusId); clearInterval(metricsId); };
   }, [serviceName]);
+
+  useEffect(() => {
+    if (!status?.in_progress || !status.canary_image) return;
+    fetchLiveAnalysis(status.canary_image);
+    const id = setInterval(() => fetchLiveAnalysis(status.canary_image), 15000);
+    return () => clearInterval(id);
+  }, [status?.in_progress, status?.canary_image]);
 
   if (!status) return null;
 
   if (!status.in_progress) {
     if (status.phase !== "Healthy") return null;
-    const tagShort = status.stable_image
-      ? status.stable_image.split("-").slice(0, 2).join("-")
-      : null;
+    const tagShort = status.stable_image ? status.stable_image.split("-").slice(0, 2).join("-") : null;
     return (
       <div className="border p-4 flex items-center gap-3 flex-wrap" style={{ borderColor: "#16a34a", background: "#f0fdf4" }}>
-        <span className="text-xs font-bold px-2 py-0.5 rounded-sm" style={{ background: "#16a34a", color: "#fff" }}>
-          ✅ 배포 완료
-        </span>
+        <span className="text-xs font-bold px-2 py-0.5 rounded-sm" style={{ background: "#16a34a", color: "#fff" }}>✅ 배포 완료</span>
         <span className="text-sm font-bold" style={{ color: "#111" }}>{serviceName}</span>
         {status.stable_image && (
-          <span
-            className="text-xs font-mono px-2 py-0.5 rounded"
-            style={{ background: "#dcfce7", color: "#14532d" }}
-            title={status.stable_image}
-          >
+          <span className="text-xs font-mono px-2 py-0.5 rounded" style={{ background: "#dcfce7", color: "#14532d" }} title={status.stable_image}>
             {tagShort || status.stable_image}
           </span>
         )}
@@ -965,117 +1009,182 @@ function CanaryStatusPanel({
     );
   }
 
+  const isDegraded = status.phase === "Degraded";
+  const borderColor = isDegraded ? "#991b1b" : "#f59e0b";
+  const bgColor = isDegraded ? "#fef2f2" : "#fffbeb";
+
   return (
-    <div className="border p-5" style={{ borderColor: "#f59e0b", background: "#fffbeb" }}>
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold px-2 py-0.5 rounded-sm" style={{ background: "#f59e0b", color: "#fff" }}>
-            CANARY 진행중
+    <div className="border p-5 space-y-5" style={{ borderColor, background: bgColor }}>
+      {/* 헤더 */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-bold px-2 py-0.5 rounded-sm" style={{ background: isDegraded ? "#991b1b" : "#f59e0b", color: "#fff" }}>
+            {isDegraded ? "⛔ DEGRADED" : "CANARY 진행중"}
           </span>
           <span className="text-sm font-bold" style={{ color: "#111" }}>{serviceName}</span>
-          <span className="text-xs" style={{ color: "#888" }}>
-            Step {status.current_step_index}/{status.steps_total} · 트래픽 {status.current_weight}%
+          <span className="text-xs font-mono px-2 py-0.5 rounded" style={{ background: "#fff7ed", color: "#92400e" }}>
+            {status.canary_image.split("-").slice(0, 2).join("-")}
           </span>
-          {status.paused && (
-            <span className="text-xs px-2 py-0.5 rounded-sm" style={{ background: "#fef2f2", color: "#991b1b" }}>
-              ⏸ 수동 승인 대기
-            </span>
+          {status.paused && !status.is_manual_pause && (
+            <span className="text-xs px-2 py-0.5 rounded-sm" style={{ background: "#e0f2fe", color: "#0369a1" }}>⏱ 자동 진행 중</span>
+          )}
+          {status.is_manual_pause && (
+            <span className="text-xs px-2 py-0.5 rounded-sm font-bold" style={{ background: "#fef9c3", color: "#854d0e" }}>⏸ 최종 승인 대기</span>
           )}
         </div>
         <div className="flex gap-2">
-          {status.paused && (
-            <button
-              onClick={() => onAction("promote")}
-              className="text-xs px-3 py-1.5 font-bold rounded-sm"
-              style={{ background: "#111", color: "#fff" }}
-            >
-              🚀 승인
+          {status.is_manual_pause && (
+            <button onClick={() => onAction("promote")}
+              className="text-xs px-4 py-1.5 font-bold rounded-sm"
+              style={{ background: "#111", color: "#fff" }}>
+              🚀 승인 (프로덕션 전환)
             </button>
           )}
-          <button
-            onClick={() => onAction("abort")}
+          <button onClick={() => onAction("abort")}
             className="text-xs px-3 py-1.5 border rounded-sm font-medium"
-            style={{ borderColor: "#991b1b", color: "#991b1b" }}
-          >
+            style={{ borderColor: "#991b1b", color: "#991b1b" }}>
             ⏪ 롤백
           </button>
         </div>
       </div>
 
-      <div className="mb-4">
+      {/* 트래픽 바 */}
+      <div>
         <div className="flex justify-between text-xs mb-1" style={{ color: "#888" }}>
           <span>Stable ({100 - status.current_weight}%)</span>
           <span>Canary ({status.current_weight}%)</span>
         </div>
         <div className="h-2 rounded-full overflow-hidden" style={{ background: "#e5e7eb" }}>
-          <div
-            className="h-full rounded-full transition-all"
-            style={{ width: `${status.current_weight}%`, background: "#f59e0b" }}
-          />
+          <div className="h-full rounded-full transition-all" style={{ width: `${status.current_weight}%`, background: isDegraded ? "#991b1b" : "#f59e0b" }} />
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <div className="p-3 rounded" style={{ background: "#f9fafb" }}>
-          <p className="text-xs mb-1" style={{ color: "#999" }}>Stable 이미지</p>
-          <p className="text-xs font-mono truncate" style={{ color: "#111" }}>{status.stable_image || "-"}</p>
-        </div>
-        <div className="p-3 rounded border" style={{ background: "#fff7ed", borderColor: "#fcd34d" }}>
-          <p className="text-xs mb-1" style={{ color: "#92400e" }}>Canary 이미지 (신규)</p>
-          <p className="text-xs font-mono truncate" style={{ color: "#92400e" }}>{status.canary_image || "-"}</p>
-        </div>
-      </div>
+      {/* 8단계 스테퍼 */}
+      {status.steps_info.length > 0 && (
+        <div>
+          <p className="text-xs font-medium mb-2" style={{ color: "#666" }}>배포 단계 진행 현황</p>
+          <div className="flex items-center gap-0 flex-wrap">
+            {status.steps_info.map((step, idx) => {
+              const isCompleted = idx < status.current_step_index;
+              const isCurrent = idx === status.current_step_index;
+              const isAnalysisStep = step.type === "analysis";
+              const analysisIdx = status.steps_info.slice(0, idx).filter(s => s.type === "analysis").length;
+              const runForThis = isAnalysisStep ? status.analysis_runs[analysisIdx] : null;
 
-      {/* Canary 파드 직접 측정 */}
-      {probe && (
-        <div className="mb-3">
-          <p className="text-xs mb-2 font-medium" style={{ color: "#92400e" }}>
-            Canary 파드 직접 측정 ({probe.probe_count}회 probe · canary 파드만)
-          </p>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="p-3 rounded text-center" style={{ background: "#fff7ed", border: "1px solid #fcd34d" }}>
-              <p className="text-xs mb-0.5" style={{ color: "#92400e" }}>에러율</p>
-              <p className="text-lg font-bold" style={{ color: probe.error_rate > 5 ? "#991b1b" : "#92400e" }}>
-                {probe.error_rate.toFixed(1)}%
-              </p>
-              <p className="text-xs" style={{ color: "#aaa" }}>{probe.error_count}건 실패</p>
-            </div>
-            <div className="p-3 rounded text-center" style={{ background: "#fff7ed", border: "1px solid #fcd34d" }}>
-              <p className="text-xs mb-0.5" style={{ color: "#92400e" }}>P99 응답시간</p>
-              <p className="text-lg font-bold" style={{ color: probe.p99_latency_ms > 1000 ? "#991b1b" : "#92400e" }}>
-                {probe.p99_latency_ms}ms
-              </p>
-            </div>
-            <div className="p-3 rounded text-center" style={{ background: "#fff7ed", border: "1px solid #fcd34d" }}>
-              <p className="text-xs mb-0.5" style={{ color: "#92400e" }}>평균 응답시간</p>
-              <p className="text-lg font-bold" style={{ color: "#92400e" }}>{probe.avg_latency_ms}ms</p>
-            </div>
+              let dotBg = "#e5e7eb";
+              let dotColor = "#9ca3af";
+              let label = stepLabel(step);
+              if (isCompleted) { dotBg = "#16a34a"; dotColor = "#fff"; }
+              if (isCurrent && !isDegraded) { dotBg = "#f59e0b"; dotColor = "#fff"; }
+              if (isCurrent && isDegraded) { dotBg = "#991b1b"; dotColor = "#fff"; }
+              if (runForThis?.phase === "Error" && isCompleted) { dotBg = "#d97706"; dotColor = "#fff"; }
+
+              return (
+                <div key={idx} className="flex items-center">
+                  <div className="flex flex-col items-center" style={{ minWidth: 52 }}>
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all"
+                      style={{ background: dotBg, color: dotColor }}>
+                      {isCompleted ? (runForThis?.phase === "Error" ? "⚠" : "✔") : isCurrent ? (isDegraded ? "✖" : "▶") : idx + 1}
+                    </div>
+                    <span className="text-center mt-1" style={{ fontSize: 9, color: isCurrent ? "#111" : "#9ca3af", fontWeight: isCurrent ? 700 : 400, lineHeight: 1.2, maxWidth: 52 }}>
+                      {label}
+                    </span>
+                    {isAnalysisStep && runForThis && (
+                      <span style={{ fontSize: 8, color: runForThis.phase === "Successful" ? "#16a34a" : runForThis.phase === "Error" ? "#d97706" : "#9ca3af" }}>
+                        {runForThis.phase === "Successful" ? "통과" : runForThis.phase === "Error" ? "오류" : runForThis.phase === "Failed" ? "실패" : "실행중"}
+                      </span>
+                    )}
+                  </div>
+                  {idx < status.steps_info.length - 1 && (
+                    <div className="h-0.5 flex-1 mx-1" style={{ minWidth: 8, background: isCompleted ? "#16a34a" : "#e5e7eb" }} />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* 전체 ALB 메트릭 */}
-      {metrics && (
-        <div>
-          <p className="text-xs mb-2" style={{ color: "#aaa" }}>전체 ALB 메트릭 (최근 {metrics.period_minutes}분 · stable+canary 합산 · 30초 자동갱신)</p>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="p-3 rounded text-center" style={{ background: "#fff" }}>
-              <p className="text-xs mb-0.5" style={{ color: "#999" }}>요청 수</p>
-              <p className="text-lg font-bold" style={{ color: "#111" }}>{metrics.total_requests.toLocaleString()}</p>
-            </div>
-            <div className="p-3 rounded text-center" style={{ background: metrics.error_rate > 5 ? "#fef2f2" : "#fff" }}>
-              <p className="text-xs mb-0.5" style={{ color: "#999" }}>5xx 에러율</p>
-              <p className="text-lg font-bold" style={{ color: metrics.error_rate > 5 ? "#991b1b" : "#111" }}>
-                {metrics.error_rate.toFixed(2)}%
-              </p>
-            </div>
-            <div className="p-3 rounded text-center" style={{ background: metrics.p99_latency_ms > 1000 ? "#fffbeb" : "#fff" }}>
-              <p className="text-xs mb-0.5" style={{ color: "#999" }}>P99 응답시간</p>
-              <p className="text-lg font-bold" style={{ color: metrics.p99_latency_ms > 1000 ? "#92400e" : "#111" }}>
-                {metrics.p99_latency_ms.toLocaleString()}ms
-              </p>
+      {/* 실시간 메트릭 */}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        {probe && (
+          <div>
+            <p className="text-xs font-medium mb-2" style={{ color: "#92400e" }}>Canary 파드 직접 측정 ({probe.probe_count}회)</p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: "에러율", value: `${probe.error_rate.toFixed(1)}%`, warn: probe.error_rate > 5 },
+                { label: "P99", value: `${probe.p99_latency_ms}ms`, warn: probe.p99_latency_ms > 1000 },
+                { label: "평균", value: `${probe.avg_latency_ms}ms`, warn: false },
+              ].map(({ label, value, warn }) => (
+                <div key={label} className="p-2 rounded text-center" style={{ background: "#fff7ed", border: "1px solid #fcd34d" }}>
+                  <p className="text-xs mb-0.5" style={{ color: "#92400e" }}>{label}</p>
+                  <p className="text-sm font-bold" style={{ color: warn ? "#991b1b" : "#92400e" }}>{value}</p>
+                </div>
+              ))}
             </div>
           </div>
+        )}
+        {metrics && (
+          <div>
+            <p className="text-xs font-medium mb-2" style={{ color: "#666" }}>전체 ALB 메트릭 (최근 5분)</p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: "요청수", value: metrics.total_requests.toLocaleString(), warn: false },
+                { label: "5xx", value: `${metrics.error_rate.toFixed(2)}%`, warn: metrics.error_rate > 5 },
+                { label: "P99", value: `${metrics.p99_latency_ms}ms`, warn: metrics.p99_latency_ms > 1000 },
+              ].map(({ label, value, warn }) => (
+                <div key={label} className="p-2 rounded text-center" style={{ background: "#fff" }}>
+                  <p className="text-xs mb-0.5" style={{ color: "#999" }}>{label}</p>
+                  <p className="text-sm font-bold" style={{ color: warn ? "#991b1b" : "#111" }}>{value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 실시간 AI 분석 (단계별) */}
+      {liveAnalysis.length > 0 && (
+        <div>
+          <p className="text-xs font-medium mb-2" style={{ color: "#374151" }}>🤖 단계별 AI 분석 (실시간)</p>
+          <div className="space-y-2">
+            {liveAnalysis.map((item, i) => {
+              const statusStyle = AI_STATUS_STYLE[item.ai_status ?? ""] ?? { bg: "#f9fafb", color: "#6b7280", emoji: "○" };
+              return (
+                <div key={i} className="p-3 rounded border" style={{ background: statusStyle.bg, borderColor: "#e5e7eb" }}>
+                  <div className="flex items-center justify-between mb-1 flex-wrap gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold" style={{ color: statusStyle.color }}>
+                        {statusStyle.emoji} Step {item.step_index} · 트래픽 {item.canary_weight}%
+                      </span>
+                      <span className="text-xs px-2 py-0.5 rounded-sm font-medium"
+                        style={{ background: item.ai_recommendation === "계속진행" ? "#dcfce7" : "#fef2f2", color: item.ai_recommendation === "계속진행" ? "#166534" : "#991b1b" }}>
+                        {item.ai_recommendation ?? "-"}
+                      </span>
+                    </div>
+                    <div className="flex gap-2 text-xs" style={{ color: "#6b7280" }}>
+                      <span>에러율 {item.error_rate.toFixed(2)}%</span>
+                      <span>P99 {item.p99_latency_ms}ms</span>
+                    </div>
+                  </div>
+                  {item.ai_reason && <p className="text-xs" style={{ color: statusStyle.color }}>{item.ai_reason}</p>}
+                  {(item.trivy_critical > 0 || item.trivy_high > 0) && (
+                    <div className="flex gap-2 mt-1">
+                      {item.trivy_critical > 0 && <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "#fef2f2", color: "#991b1b" }}>CRITICAL {item.trivy_critical}</span>}
+                      {item.trivy_high > 0 && <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "#fffbeb", color: "#92400e" }}>HIGH {item.trivy_high}</span>}
+                      {item.trivy_medium > 0 && <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "#f0f9ff", color: "#0369a1" }}>MEDIUM {item.trivy_medium}</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {liveAnalysis.length === 0 && status.in_progress && (
+        <div className="p-3 rounded text-center" style={{ background: "#f9fafb", border: "1px dashed #e5e7eb" }}>
+          <p className="text-xs" style={{ color: "#9ca3af" }}>⏳ AI 분석 대기 중... (10% 트래픽 안정화 후 약 3분 뒤 분석 결과가 표시됩니다)</p>
         </div>
       )}
     </div>
@@ -1098,6 +1207,11 @@ type AIOpsDeployment = {
   trivy_high?: number;
   trivy_medium?: number;
   trivy_low?: number;
+  sonar_coverage?: number | null;
+  sonar_bugs?: number | null;
+  sonar_vulnerabilities?: number | null;
+  sonar_code_smells?: number | null;
+  sonar_quality_gate?: string | null;
   ai_status: string;
   ai_recommendation: string;
   ai_reason: string;
@@ -1309,6 +1423,56 @@ function TrivyScan({ item }: { item: AIOpsDeployment }) {
   );
 }
 
+function SonarQualityPanel({ item }: { item: AIOpsDeployment }) {
+  if (item.sonar_coverage == null && item.sonar_bugs == null) return null;
+
+  const gateColor = item.sonar_quality_gate === "OK"
+    ? { bg: "#f0fdf4", border: "#16a34a", text: "#15803d", label: "PASSED" }
+    : item.sonar_quality_gate === "ERROR"
+    ? { bg: "#fef2f2", border: "#dc2626", text: "#b91c1c", label: "FAILED" }
+    : { bg: "#f9fafb", border: "#d1d5db", text: "#6b7280", label: item.sonar_quality_gate ?? "N/A" };
+
+  return (
+    <div className="mb-3 p-3 rounded border" style={{ background: "#fafafa", borderColor: "#e5e7eb" }}>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-medium" style={{ color: "#555" }}>🔍 SonarCloud 코드 품질</p>
+        {item.sonar_quality_gate && (
+          <span className="text-xs px-2 py-0.5 rounded font-bold border"
+            style={{ background: gateColor.bg, borderColor: gateColor.border, color: gateColor.text }}>
+            Quality Gate {gateColor.label}
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        <div className="text-center p-2 rounded" style={{ background: "#fff", border: "1px solid #e5e7eb" }}>
+          <p className="text-lg font-bold" style={{ color: "#2563eb" }}>
+            {item.sonar_coverage != null ? `${item.sonar_coverage.toFixed(1)}%` : "—"}
+          </p>
+          <p className="text-xs" style={{ color: "#888" }}>커버리지</p>
+        </div>
+        <div className="text-center p-2 rounded" style={{ background: "#fff", border: "1px solid #e5e7eb" }}>
+          <p className="text-lg font-bold" style={{ color: (item.sonar_bugs ?? 0) > 0 ? "#dc2626" : "#16a34a" }}>
+            {item.sonar_bugs ?? "—"}
+          </p>
+          <p className="text-xs" style={{ color: "#888" }}>버그</p>
+        </div>
+        <div className="text-center p-2 rounded" style={{ background: "#fff", border: "1px solid #e5e7eb" }}>
+          <p className="text-lg font-bold" style={{ color: (item.sonar_vulnerabilities ?? 0) > 0 ? "#dc2626" : "#16a34a" }}>
+            {item.sonar_vulnerabilities ?? "—"}
+          </p>
+          <p className="text-xs" style={{ color: "#888" }}>취약점</p>
+        </div>
+        <div className="text-center p-2 rounded" style={{ background: "#fff", border: "1px solid #e5e7eb" }}>
+          <p className="text-lg font-bold" style={{ color: (item.sonar_code_smells ?? 0) > 5 ? "#f59e0b" : "#16a34a" }}>
+            {item.sonar_code_smells ?? "—"}
+          </p>
+          <p className="text-xs" style={{ color: "#888" }}>코드스멜</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AiFeedback({ item, itemKey, fbState, feedbackSending, onFeedback }: {
   item: AIOpsDeployment;
   itemKey: string;
@@ -1400,6 +1564,7 @@ function DeploymentCard({
       )}
       <MetricsGrid item={item} prevItem={prevItem} cwUrl={cwUrl} />
       {item.trivy_critical !== undefined && <TrivyScan item={item} />}
+      <SonarQualityPanel item={item} />
       <AiFeedback
         item={item}
         itemKey={itemKey}
