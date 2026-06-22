@@ -1125,7 +1125,15 @@ function CanaryStatusPanel({
         )}
         {metrics && (
           <div>
-            <p className="text-xs font-medium mb-2" style={{ color: "#666" }}>전체 ALB 메트릭 (최근 5분)</p>
+            <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-medium" style={{ color: "#666" }}>전체 ALB 메트릭 (최근 5분)</p>
+            <a href={`${GRAFANA_URL}/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-namespace=fiveline`}
+              target="_blank" rel="noopener noreferrer"
+              className="text-xs flex items-center gap-1 hover:underline"
+              style={{ color: "#6366f1" }}>
+              📊 상세 로그 · 리소스 보기 →
+            </a>
+          </div>
             <div className="grid grid-cols-3 gap-2">
               {[
                 { label: "요청수", value: metrics.total_requests.toLocaleString(), warn: false },
@@ -1285,11 +1293,16 @@ function RolloutActionModal({ action, serviceName, onConfirm, onCancel, loading 
         <p className="text-xs mb-1" style={{ color: "#666" }}>
           서비스: <strong>{serviceName}</strong>
         </p>
-        <p className="text-xs mb-4" style={{ color: "#666" }}>
+        <p className="text-xs mb-3" style={{ color: "#666" }}>
           {action === "promote"
             ? "카나리 트래픽을 100%로 승인(Promote)합니다. 계속하시겠습니까?"
             : "카나리를 중단하고 이전 버전으로 롤백(Abort)합니다. 계속하시겠습니까?"}
         </p>
+        {action === "promote" && (
+          <div className="mb-4 px-3 py-2 text-xs rounded" style={{ background: "#fefce8", border: "1px solid #fde047", color: "#854d0e" }}>
+            ⚠️ <strong>DB 스키마 변경(DDL)이 포함된 배포라면</strong> 롤백 시 코드는 복구되지만 DB 스키마는 그대로 남아 서비스 장애가 발생할 수 있습니다. 반드시 마이그레이션 교차 검증 후 승인하세요.
+          </div>
+        )}
         <div className="flex gap-2 justify-end">
           <button onClick={onCancel} disabled={loading}
             className="px-4 py-1.5 text-xs border rounded-sm disabled:opacity-50"
