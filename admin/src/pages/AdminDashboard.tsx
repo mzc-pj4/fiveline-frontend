@@ -915,6 +915,19 @@ type CanaryProbe = {
   canary_only: boolean;
 };
 
+type PodMetric = {
+  pod: string;
+  role: "stable" | "canary";
+  cpu_percent: number | null;
+  memory_mib: number | null;
+};
+
+type PodMetrics = {
+  service: string;
+  pods: PodMetric[];
+  error?: string;
+};
+
 type LiveAnalysisItem = {
   step_index: number | null;
   canary_weight: number | null;
@@ -951,6 +964,7 @@ function CanaryStatusPanel({
   const [metrics, setMetrics] = useState<RealtimeMetrics | null>(null);
   const [probe, setProbe] = useState<CanaryProbe | null>(null);
   const [liveAnalysis, setLiveAnalysis] = useState<LiveAnalysisItem[]>([]);
+  const [podMetrics, setPodMetrics] = useState<PodMetrics | null>(null);
 
   const fetchStatus = () => {
     api.get<RolloutStatus>(`/api/admin/cicd/rollout-status?service=${serviceName}`)
@@ -965,6 +979,9 @@ function CanaryStatusPanel({
     api.get<CanaryProbe>(`/api/admin/cicd/canary-probe?service=${serviceName}&count=20`)
       .then((r) => setProbe(r.data))
       .catch(() => setProbe(null));
+    api.get<PodMetrics>(`/api/admin/cicd/pod-metrics?service=${serviceName}`)
+      .then((r) => setPodMetrics(r.data))
+      .catch(() => setPodMetrics(null));
   };
 
   const fetchLiveAnalysis = (imageTag: string) => {
@@ -1149,6 +1166,39 @@ function CanaryStatusPanel({
           </div>
         )}
       </div>
+
+      {/* Pod CPU / Memory (Prometheus) */}
+      {podMetrics && podMetrics.pods.length > 0 && (
+        <div>
+          <p className="text-xs font-medium mb-2" style={{ color: "#374151" }}>🖥️ Pod 리소스 (Stable vs Canary)</p>
+          <div className="grid grid-cols-1 gap-2">
+            {(["stable", "canary"] as const).map((role) => {
+              const rolePods = podMetrics.pods.filter((p) => p.role === role);
+              if (rolePods.length === 0) return null;
+              const avgCpu = rolePods.reduce((s, p) => s + (p.cpu_percent ?? 0), 0) / rolePods.length;
+              const avgMem = rolePods.reduce((s, p) => s + (p.memory_mib ?? 0), 0) / rolePods.length;
+              const isCanary = role === "canary";
+              const stablePods = podMetrics.pods.filter((p) => p.role === "stable");
+              const stableAvgMem = stablePods.length > 0 ? stablePods.reduce((s, p) => s + (p.memory_mib ?? 0), 0) / stablePods.length : null;
+              const memWarn = isCanary && stableAvgMem != null && avgMem > stableAvgMem * 2;
+              return (
+                <div key={role} className="flex items-center gap-3 px-3 py-2 rounded border"
+                  style={{ borderColor: isCanary ? "#f59e0b" : "#16a34a", background: isCanary ? "#fffbeb" : "#f0fdf4" }}>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-sm"
+                    style={{ background: isCanary ? "#f59e0b" : "#16a34a", color: "#fff" }}>
+                    {role === "stable" ? "Stable" : "Canary"}
+                  </span>
+                  <span className="text-xs" style={{ color: "#555" }}>CPU {avgCpu.toFixed(1)}%</span>
+                  <span className="text-xs font-medium" style={{ color: memWarn ? "#991b1b" : "#555" }}>
+                    MEM {avgMem.toFixed(0)} MiB {memWarn && "⚠️ OOM 위험"}
+                  </span>
+                  <span className="text-xs ml-auto" style={{ color: "#9ca3af" }}>{rolePods.length}개 파드</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 실시간 AI 분석 (단계별) */}
       {liveAnalysis.length > 0 && (
