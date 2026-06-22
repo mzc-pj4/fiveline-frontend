@@ -874,7 +874,6 @@ function SonarCloudSection() {
 function CodeQualityTab() {
   return (
     <div className="space-y-6">
-      <SonarCloudSection />
       <AIOpsSection />
     </div>
   );
@@ -1583,7 +1582,8 @@ function AIOpsSection() {
   const [tick, setTick] = useState(0);
   const [feedback, setFeedback] = useState<Record<string, "positive" | "negative">>({});
   const [feedbackSending, setFeedbackSending] = useState<Record<string, boolean>>({});
-  const [confirmAction, setConfirmAction] = useState<{ action: "promote" | "abort" } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ action: "promote" | "abort"; service: string } | null>(null);
+  const [sonarOpen, setSonarOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
@@ -1629,7 +1629,7 @@ function AIOpsSection() {
     if (!confirmAction) return;
     setActionLoading(true);
     try {
-      await api.post("/api/admin/cicd/rollout-action", { service_name: selectedService, action: confirmAction.action });
+      await api.post("/api/admin/cicd/rollout-action", { service_name: confirmAction.service, action: confirmAction.action });
       showToast(
         confirmAction.action === "promote" ? "카나리 배포 승인 요청이 전송되었습니다." : "롤백 요청이 전송되었습니다.",
         "success"
@@ -1650,10 +1650,33 @@ function AIOpsSection() {
         </div>
       )}
 
-      <CanaryStatusPanel
-        serviceName={selectedService}
-        onAction={(action) => setConfirmAction({ action })}
-      />
+      {/* 3개 서비스 카나리 상태 동시 표시 */}
+      <div className="space-y-3">
+        {SERVICES_LIST.map(({ key }) => (
+          <CanaryStatusPanel
+            key={key}
+            serviceName={key}
+            onAction={(action) => setConfirmAction({ action, service: key })}
+          />
+        ))}
+      </div>
+
+      {/* SonarCloud 코드 품질 — Accordion */}
+      <div className="border rounded-sm" style={{ borderColor: "#e5e7eb" }}>
+        <button
+          onClick={() => setSonarOpen((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium"
+          style={{ background: "#f9fafb", color: "#374151" }}
+        >
+          <span>🔍 코드 품질 (SonarCloud)</span>
+          <span style={{ fontSize: 10, color: "#9ca3af" }}>{sonarOpen ? "▲ 접기" : "▼ 펼치기"}</span>
+        </button>
+        {sonarOpen && (
+          <div className="p-4">
+            <SonarCloudSection />
+          </div>
+        )}
+      </div>
 
       <div className="flex items-center justify-between">
         <div>
@@ -1663,7 +1686,7 @@ function AIOpsSection() {
         <RefreshButton onClick={() => setTick((n) => n + 1)} />
       </div>
 
-      {/* 서비스 탭 */}
+      {/* 서비스 탭 (이력 전용) */}
       <div className="flex gap-1">
         {SERVICES_LIST.map(({ key, label }) => (
           <button key={key} onClick={() => setSelectedService(key)}
@@ -1681,7 +1704,7 @@ function AIOpsSection() {
       {confirmAction && (
         <RolloutActionModal
           action={confirmAction.action}
-          serviceName={selectedService}
+          serviceName={confirmAction.service}
           onConfirm={handleRolloutAction}
           onCancel={() => setConfirmAction(null)}
           loading={actionLoading}
