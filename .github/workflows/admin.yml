@@ -74,7 +74,7 @@ jobs:
   dependency-check:
     name: Dependency Check
     runs-on: ubuntu-latest
-    needs: sonarcloud
+    needs: test
 
     steps:
       - name: Checkout code
@@ -94,6 +94,21 @@ jobs:
       - name: Run npm audit
         run: npm audit --audit-level=critical
         working-directory: ./admin
+
+  trigger-backend-deploy:
+    name: Trigger Backend Deploy
+    runs-on: ubuntu-latest
+    needs: dependency-check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Dispatch admin-service.yml in backend repo
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.MANIFEST_REPO_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/mzc-pj4/fiveline-backend/actions/workflows/admin-service.yml/dispatches \
+            -d '{"ref":"main"}'
 
   build-and-push:
     name: Build & Push to ECR
