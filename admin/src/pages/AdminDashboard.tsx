@@ -995,11 +995,13 @@ function CanaryStatusPanel({
   onAction,
   ddlChecked,
   onDdlCheck,
+  refreshKey,
 }: {
   serviceName: string;
   onAction: (action: "promote" | "abort") => void;
   ddlChecked: boolean;
   onDdlCheck: (v: boolean) => void;
+  refreshKey?: number;
 }) {
   const [status, setStatus] = useState<RolloutStatus | null>(null);
   const [metrics, setMetrics] = useState<RealtimeMetrics | null>(null);
@@ -1040,6 +1042,10 @@ function CanaryStatusPanel({
     const metricsId = setInterval(fetchMetrics, 30000);
     return () => { clearInterval(statusId); clearInterval(metricsId); };
   }, [serviceName]);
+
+  useEffect(() => {
+    if (refreshKey) fetchStatus();
+  }, [refreshKey]);
 
   useEffect(() => {
     if (!status?.in_progress || !status.canary_image) return;
@@ -1796,6 +1802,7 @@ function AIOpsSection() {
   const [ddlChecked, setDdlChecked] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     setLoading(true);
@@ -1844,6 +1851,7 @@ function AIOpsSection() {
         confirmAction.action === "promote" ? "카나리 배포 승인 요청이 전송되었습니다." : "롤백 요청이 전송되었습니다.",
         "success"
       );
+      setTimeout(() => setRefreshKey(k => k + 1), 2000);
     } catch {
       showToast("요청 처리 중 오류가 발생했습니다.", "error");
     }
@@ -1882,6 +1890,7 @@ function AIOpsSection() {
         onAction={(action) => setConfirmAction({ action, service: selectedService })}
         ddlChecked={ddlChecked}
         onDdlCheck={setDdlChecked}
+        refreshKey={refreshKey}
       />
 
       {/* SonarCloud 코드 품질 — Accordion */}
