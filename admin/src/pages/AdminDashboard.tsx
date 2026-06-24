@@ -742,15 +742,15 @@ function Pagination({ page, totalPages, onPageChange }: { page: number; totalPag
 const GRAFANA_DASHBOARDS = [
   {
     title: "Kubernetes 클러스터 리소스",
-    url: `${GRAFANA_URL}/d/efa86fd1d0c121a26444b636a3f509a8/kubernetes-compute-resources-cluster?orgId=1&kiosk&theme=light`,
+    url: `${GRAFANA_URL}/d/efa86fd1d0c121a26444b636a3f509a8/kubernetes-compute-resources-cluster?orgId=1&var-cluster=&kiosk&theme=light`,
   },
   {
     title: "Kubernetes 네임스페이스별 리소스",
-    url: `${GRAFANA_URL}/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-namespace=fiveline&kiosk&theme=light`,
+    url: `${GRAFANA_URL}/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-cluster=&var-namespace=fiveline&kiosk&theme=light`,
   },
   {
     title: "Kubernetes Pod 상세",
-    url: `${GRAFANA_URL}/d/6581e46e4e5c7ba40a07646395ef7b23/kubernetes-compute-resources-pod?orgId=1&var-namespace=fiveline&kiosk&theme=light`,
+    url: `${GRAFANA_URL}/d/6581e46e4e5c7ba40a07646395ef7b23/kubernetes-compute-resources-pod?orgId=1&var-cluster=&var-namespace=fiveline&kiosk&theme=light`,
   },
 ];
 
