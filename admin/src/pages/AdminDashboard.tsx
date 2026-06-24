@@ -1084,6 +1084,28 @@ function CanaryStatusPanel({
 
   return (
     <div className="space-y-4">
+      {/* 자동 롤백 감지 배너 */}
+      {isDegraded && (() => {
+        const failedRun = status.analysis_runs.find((r) => r.phase === "Failed" || r.phase === "Error");
+        const failedMetric = failedRun?.metric_details?.find((m) => m.phase === "Failed" || m.failed > 0);
+        return (
+          <div className="rounded-xl p-4 flex items-start gap-3" style={{ background: "#fef2f2", border: "2px solid #dc2626" }}>
+            <span style={{ fontSize: 24 }}>🚨</span>
+            <div>
+              <p className="font-black text-sm" style={{ color: "#dc2626" }}>자동 롤백 감지 — AnalysisRun 실패</p>
+              <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
+                카나리 트래픽에서 이상 징후가 감지되어 시스템이 자동으로 안정 버전({status.stable_image || "stable"})으로 롤백했습니다.
+              </p>
+              {failedMetric && (
+                <p className="text-xs mt-1 font-semibold" style={{ color: "#dc2626" }}>
+                  원인: {failedMetric.name} — {failedMetric.failed}회 임계치 초과 (최신값: {failedMetric.latest_value?.toFixed(2) ?? "-"}%)
+                </p>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── 상단 헤더 ── */}
       <div className="rounded-xl p-5" style={{
         background: isDegraded ? "#fef2f2" : "linear-gradient(135deg, #fffbeb, #fef9c3)",
