@@ -741,6 +741,10 @@ function Pagination({ page, totalPages, onPageChange }: { page: number; totalPag
 
 const GRAFANA_DASHBOARDS = [
   {
+    title: "SLO / Error Budget",
+    url: `${GRAFANA_URL}/d/akv995/fiveline-slo-error-budget?orgId=1&kiosk&theme=light`,
+  },
+  {
     title: "Kubernetes 클러스터 리소스",
     url: `${GRAFANA_URL}/d/efa86fd1d0c121a26444b636a3f509a8/kubernetes-compute-resources-cluster?orgId=1&var-cluster=&kiosk&theme=light`,
   },
