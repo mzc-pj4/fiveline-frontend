@@ -880,7 +880,8 @@ function CodeQualityTab() {
 }
 
 type StepInfo = { type: string; weight?: number; duration?: string };
-type AnalysisRunInfo = { name: string; phase: string; successful: number; failed: number; error: number; started_at: string | null };
+type MetricDetail = { name: string; phase: string; successful: number; failed: number; error: number; latest_value: number | null; values: number[] };
+type AnalysisRunInfo = { name: string; phase: string; successful: number; failed: number; error: number; started_at: string | null; metric_details: MetricDetail[] };
 
 type RolloutStatus = {
   phase: string;
@@ -1237,6 +1238,59 @@ function CanaryStatusPanel({
               </div>
             ))}
           </div>
+
+          {/* 분석 결과 */}
+          {status.analysis_runs.length > 0 && (
+            <div className="bg-white rounded-xl p-5 shadow-sm" style={{ border: "1px solid #f3f4f6" }}>
+              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "#9ca3af" }}>분석 결과 (AnalysisRun)</p>
+              <div className="space-y-3">
+                {status.analysis_runs.map((run, i) => {
+                  const phaseColor = run.phase === "Successful" ? "#16a34a" : run.phase === "Failed" ? "#dc2626" : run.phase === "Running" ? "#f59e0b" : "#6b7280";
+                  const phaseBg = run.phase === "Successful" ? "#f0fdf4" : run.phase === "Failed" ? "#fef2f2" : run.phase === "Running" ? "#fffbeb" : "#f9fafb";
+                  const phaseLabel = run.phase === "Successful" ? "통과" : run.phase === "Failed" ? "실패" : run.phase === "Running" ? "실행 중" : run.phase;
+                  return (
+                    <div key={run.name} className="rounded-lg p-3" style={{ background: phaseBg, border: `1px solid ${phaseColor}22` }}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold" style={{ color: "#374151" }}>{i + 1}차 분석</span>
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: phaseColor, color: "#fff" }}>{phaseLabel}</span>
+                      </div>
+                      {(run.metric_details ?? []).map((m) => {
+                        const val = m.latest_value;
+                        const threshold = 10.0;
+                        const isOk = val !== null && val <= threshold;
+                        return (
+                          <div key={m.name} className="mt-2">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs" style={{ color: "#6b7280" }}>{m.name}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs" style={{ color: "#9ca3af" }}>임계치 ≤ {threshold}%</span>
+                                <span className="text-xs font-bold" style={{ color: val === null ? "#9ca3af" : isOk ? "#16a34a" : "#dc2626" }}>
+                                  {val !== null ? `${val.toFixed(2)}%` : "측정 중..."}
+                                </span>
+                                <span>{val === null ? "" : isOk ? "✅" : "❌"}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs" style={{ color: "#9ca3af" }}>통과 {m.successful} / 실패 {m.failed} / 오류 {m.error}</span>
+                            </div>
+                            {m.values.length > 0 && (
+                              <div className="flex gap-1 flex-wrap mt-1">
+                                {m.values.map((v, vi) => (
+                                  <span key={vi} className="text-xs px-1.5 py-0.5 rounded" style={{ background: v <= threshold ? "#dcfce7" : "#fee2e2", color: v <= threshold ? "#16a34a" : "#dc2626", fontFamily: "monospace" }}>
+                                    {v.toFixed(1)}%
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Pod 리소스 */}
           {podMetrics && podMetrics.pods.length > 0 && (
