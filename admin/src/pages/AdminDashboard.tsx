@@ -750,11 +750,11 @@ const GRAFANA_DASHBOARDS = [
   },
   {
     title: "Kubernetes 네임스페이스별 리소스",
-    url: `${GRAFANA_URL}/public-dashboards/c52fe3c9910941398e770ef256f18d7d`,
+    url: `${GRAFANA_URL}/public-dashboards/c52fe3c9910941398e770ef256f18d7d?var-namespace=fiveline`,
   },
   {
     title: "Kubernetes Pod 상세",
-    url: `${GRAFANA_URL}/public-dashboards/b5f87ab44c0742bca971c2461b845cb4`,
+    url: `${GRAFANA_URL}/public-dashboards/b5f87ab44c0742bca971c2461b845cb4?var-namespace=fiveline`,
   },
 ];
 
