@@ -742,19 +742,19 @@ function Pagination({ page, totalPages, onPageChange }: { page: number; totalPag
 const GRAFANA_DASHBOARDS = [
   {
     title: "SLO / Error Budget",
-    url: `${GRAFANA_URL}/public-dashboards/f4cda173ffbf41d3af772361aa47ed2e`,
+    url: `${GRAFANA_URL}/public-dashboards/ce4bc47ff09a49f284d24e8fbb9a1094`,
   },
   {
     title: "Kubernetes 클러스터 리소스",
-    url: `${GRAFANA_URL}/public-dashboards/eb64ff77e2e34334877869f17e078255`,
+    url: `${GRAFANA_URL}/public-dashboards/27f58fb8684940c9bae07469185e1bed`,
   },
   {
     title: "Kubernetes 네임스페이스별 리소스",
-    url: `${GRAFANA_URL}/public-dashboards/c52fe3c9910941398e770ef256f18d7d?var-namespace=fiveline`,
+    url: `${GRAFANA_URL}/public-dashboards/1e3fff81580d411ba1eddc8d664aebed?var-namespace=fiveline`,
   },
   {
     title: "Kubernetes Pod 상세",
-    url: `${GRAFANA_URL}/public-dashboards/b5f87ab44c0742bca971c2461b845cb4?var-namespace=fiveline`,
+    url: `${GRAFANA_URL}/public-dashboards/b2f3c5fd505c4608976cb07064fd3d81?var-namespace=fiveline`,
   },
 ];
 
