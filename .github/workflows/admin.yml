@@ -10,7 +10,7 @@ on:
 env:
   AWS_REGION: ap-northeast-2
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
-  ECR_REPOSITORY: fiveline/admin-service
+  ECR_REPOSITORY: fiveline/admin
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 permissions:
@@ -114,7 +114,7 @@ jobs:
     name: Build & Push to ECR
     runs-on: ubuntu-latest
     needs: dependency-check
-    if: false  # fiveline-backend/admin-service.yml에서 React+FastAPI 통합 이미지 빌드 담당
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout code
@@ -178,16 +178,16 @@ jobs:
           cd fiveline_k8s_manifest
           BRANCH=deploy/admin-${{ github.run_number }}
           git checkout -b $BRANCH
-          sed -i "s|fiveline/admin-service:.*|fiveline/admin-service:${IMAGE_TAG}|" k8s/apps/base/admin-service/deployment.yaml
+          sed -i "s|fiveline/admin:.*|fiveline/admin:${IMAGE_TAG}|" admin/admin.yaml
           git config user.email "github-actions@github.com"
           git config user.name "GitHub Actions"
-          git add k8s/apps/base/admin-service/deployment.yaml
-          git commit -m "chore: update admin-service image tag to ${IMAGE_TAG}"
+          git add admin/admin.yaml
+          git commit -m "chore: update admin image tag to ${IMAGE_TAG}"
           git push origin $BRANCH
           gh pr create \
             --repo mzc-pj4/fiveline_k8s_manifest \
-            --title "chore: update admin-service image tag to ${IMAGE_TAG}" \
-            --body "자동 생성된 PR입니다.\n\n서비스: admin-service\n이미지 태그: ${IMAGE_TAG}\n실행자: ${{ github.actor }}" \
+            --title "chore: update admin image tag to ${IMAGE_TAG}" \
+            --body "자동 생성된 PR입니다.\n\n서비스: admin (React)\n이미지 태그: ${IMAGE_TAG}\n실행자: ${{ github.actor }}" \
             --base main \
             --head $BRANCH
 
