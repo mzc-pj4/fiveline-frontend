@@ -741,20 +741,16 @@ function Pagination({ page, totalPages, onPageChange }: { page: number; totalPag
 
 const GRAFANA_DASHBOARDS = [
   {
-    title: "SLO / Error Budget",
-    url: `${GRAFANA_URL}/public-dashboards/f4cda173ffbf41d3af772361aa47ed2e`,
-  },
-  {
     title: "Kubernetes 클러스터 리소스",
-    url: `${GRAFANA_URL}/public-dashboards/eb64ff77e2e34334877869f17e078255`,
+    url: `${GRAFANA_URL}/d/efa86fd1d0c121a26444b636a3f509a8/kubernetes-compute-resources-cluster?orgId=1&kiosk&theme=light`,
   },
   {
     title: "Kubernetes 네임스페이스별 리소스",
-    url: `${GRAFANA_URL}/public-dashboards/c52fe3c9910941398e770ef256f18d7d?var-namespace=fiveline`,
+    url: `${GRAFANA_URL}/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-namespace=fiveline&kiosk&theme=light`,
   },
   {
     title: "Kubernetes Pod 상세",
-    url: `${GRAFANA_URL}/public-dashboards/b5f87ab44c0742bca971c2461b845cb4?var-namespace=fiveline`,
+    url: `${GRAFANA_URL}/d/6581e46e4e5c7ba40a07646395ef7b23/kubernetes-compute-resources-pod?orgId=1&var-namespace=fiveline&kiosk&theme=light`,
   },
 ];
 
@@ -991,6 +987,103 @@ function ThresholdRow({ label, value, threshold, unit }: {
   );
 }
 
+type SparkPoint = { t: string; errNorm: number; p99Norm: number; rawErr: number; rawP99: number };
+
+function SparklineChart({ data }: { data: SparkPoint[] }) {
+  if (data.length < 2) return null;
+  const W = 300, H = 80, padX = 8, padY = 4;
+  const eff_w = W - padX * 2;
+  const eff_h = H - padY * 2;
+  const n = data.length;
+
+  const pathFor = (field: "errNorm" | "p99Norm") =>
+    data.map((d, i) => {
+      const x = padX + (i / (n - 1)) * eff_w;
+      const y = padY + (1 - d[field]) * eff_h;
+      return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+    }).join(" ");
+
+  const areaFor = (field: "errNorm" | "p99Norm") => {
+    const pts = data.map((d, i) => ({
+      x: padX + (i / (n - 1)) * eff_w,
+      y: padY + (1 - d[field]) * eff_h,
+    }));
+    const line = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+    return `${line} L ${pts[n - 1].x.toFixed(1)} ${(H - padY).toFixed(1)} L ${pts[0].x.toFixed(1)} ${(H - padY).toFixed(1)} Z`;
+  };
+
+  return (
+    <div className="rounded-xl px-4 pt-3 pb-2 mb-4" style={{ background: "#f8fafc", border: "1px solid rgba(0,0,0,0.06)" }}>
+      <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "#94a3b8", fontFamily: "monospace" }}>
+        5xx Rate + P99 (최근 {n}회 샘플)
+      </p>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={72}>
+        <defs>
+          <linearGradient id="gErrC" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#10b981" stopOpacity="0.25" />
+            <stop offset="95%" stopColor="#10b981" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="gP99C" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#0ea5e9" stopOpacity="0.18" />
+            <stop offset="95%" stopColor="#0ea5e9" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={areaFor("errNorm")} fill="url(#gErrC)" />
+        <path d={pathFor("errNorm")} fill="none" stroke="#10b981" strokeWidth="1.5" strokeLinejoin="round" />
+        <path d={areaFor("p99Norm")} fill="url(#gP99C)" />
+        <path d={pathFor("p99Norm")} fill="none" stroke="#0ea5e9" strokeWidth="1.5" strokeLinejoin="round" />
+      </svg>
+      <div className="flex items-center gap-4 mt-1">
+        <div className="flex items-center gap-1">
+          <span style={{ display: "inline-block", width: 10, height: 2, background: "#10b981", borderRadius: 1 }} />
+          <span className="text-xs" style={{ color: "#94a3b8", fontFamily: "monospace" }}>5xx rate</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span style={{ display: "inline-block", width: 10, height: 2, background: "#0ea5e9", borderRadius: 1 }} />
+          <span className="text-xs" style={{ color: "#94a3b8", fontFamily: "monospace" }}>P99</span>
+        </div>
+        <span className="ml-auto text-xs font-mono" style={{ color: "#d1d5db", fontFamily: "monospace" }}>
+          latest: {data[n - 1]?.rawErr.toFixed(2)}% / {data[n - 1]?.rawP99}ms
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function MetricRowNew({ name, threshold, value, unit, pass, margin }: {
+  name: string; threshold: string; value: string; unit?: string; pass: boolean; margin: string;
+}) {
+  return (
+    <div className="flex items-center justify-between py-2.5 px-3.5 rounded-lg border transition-colors"
+      style={{ background: "#fff", borderColor: "rgba(0,0,0,0.06)" }}>
+      <div className="flex flex-col gap-0.5">
+        <span className="text-xs font-semibold" style={{ color: "#1e293b", fontFamily: "monospace" }}>{name}</span>
+        <span className="text-xs" style={{ color: "#94a3b8", fontFamily: "monospace" }}>임계치: {threshold}</span>
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="text-right">
+          <p className="text-base font-bold leading-none" style={{ color: pass ? "#059669" : "#dc2626", fontFamily: "monospace" }}>
+            {value}{unit && <span className="text-xs font-normal ml-0.5">{unit}</span>}
+          </p>
+          <p className="text-xs mt-0.5" style={{ color: pass ? "#10b981" : "#ef4444", fontFamily: "monospace" }}>{margin}</p>
+        </div>
+        <span style={{ fontSize: 15 }}>{pass ? "✅" : "❌"}</span>
+      </div>
+    </div>
+  );
+}
+
+function DarkMetricChipNew({ label, value, pass }: { label: string; value: string; pass: boolean }) {
+  return (
+    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md"
+      style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.07)" }}>
+      <span className="text-xs uppercase tracking-wider" style={{ color: "#64748b", fontFamily: "monospace" }}>{label}</span>
+      <span className="text-xs font-semibold" style={{ color: pass ? "#34d399" : "#fbbf24", fontFamily: "monospace" }}>{value}</span>
+      <span style={{ fontSize: 10 }}>{pass ? "✅" : "⚠️"}</span>
+    </div>
+  );
+}
+
 function CanaryStatusPanel({
   serviceName,
   onAction,
@@ -1010,6 +1103,8 @@ function CanaryStatusPanel({
   const [liveAnalysis, setLiveAnalysis] = useState<LiveAnalysisItem[]>([]);
   const [podMetrics, setPodMetrics] = useState<PodMetrics | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const metricsHistory = useRef<SparkPoint[]>([]);
+  const [sparkData, setSparkData] = useState<SparkPoint[]>([]);
 
   const fetchStatus = () => {
     api.get<RolloutStatus>(`/api/admin/cicd/rollout-status?service=${serviceName}`)
@@ -1061,9 +1156,26 @@ function CanaryStatusPanel({
     return () => clearInterval(id);
   }, [status?.in_progress]);
 
+  useEffect(() => {
+    if (!metrics) return;
+    const now = new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const point: SparkPoint = {
+      t: now,
+      errNorm: Math.min(metrics.error_rate / 5, 1),
+      p99Norm: Math.min(Math.max(metrics.p99_latency_ms - 50, 0) / 950, 1),
+      rawErr: metrics.error_rate,
+      rawP99: metrics.p99_latency_ms,
+    };
+    metricsHistory.current = [...metricsHistory.current.slice(-19), point];
+    setSparkData([...metricsHistory.current]);
+  }, [metrics]);
+
   if (!status) return null;
 
-  if (!status.in_progress) {
+  // phase === "Progressing" 도 진행 중으로 처리 (ArgoCD sync 직후 두 해시가 같은 경우 대응)
+  const actuallyInProgress = status.in_progress || status.phase === "Progressing";
+
+  if (!actuallyInProgress) {
     if (status.phase !== "Healthy") return null;
     const tagShort = status.stable_image ? status.stable_image.split("-").slice(0, 2).join("-") : null;
     return (
@@ -1086,370 +1198,449 @@ function CanaryStatusPanel({
   const canaryShort = status.canary_image ? status.canary_image.split("-").slice(0, 2).join("-") : "-";
   const latestAI = liveAnalysis.length > 0 ? liveAnalysis[liveAnalysis.length - 1] : null;
 
+  const errorRate = probe?.error_rate ?? metrics?.error_rate ?? 0;
+  const p99Ms = probe?.p99_latency_ms ?? metrics?.p99_latency_ms ?? 0;
+  const successRate = 100 - errorRate;
+  const totalReq = metrics?.total_requests ?? 0;
+
+  const errorPass = errorRate < ERROR_RATE_THRESHOLD;
+  const p99Pass = p99Ms < P99_THRESHOLD;
+  const successPass = successRate > 99.5;
+  const allPass = errorPass && p99Pass;
+
+  const DISPLAY_STEPS = [
+    { pct: "10%", min: 10, max: 30 },
+    { pct: "30%", min: 30, max: 50 },
+    { pct: "50%", min: 50, max: 100 },
+    { pct: "100%", min: 100, max: Infinity },
+  ];
+  const w = status.current_weight;
+  const stepsWithStatus = DISPLAY_STEPS.map((s) => {
+    const isCompleted = w >= s.max;
+    const isCurrent = w >= s.min && w < s.max;
+    let labelKo = "대기 중";
+    if (isCompleted) labelKo = "완료";
+    else if (isCurrent) {
+      if (s.pct === "50%" && status.is_manual_pause) labelKo = "수동 승인 대기";
+      else if (status.paused) labelKo = "분석 중";
+      else labelKo = "진행 중";
+    }
+    return { ...s, isCompleted, isCurrent, labelKo };
+  });
+  const completedCount = stepsWithStatus.filter((s) => s.isCompleted).length;
+
   return (
     <div className="space-y-4">
-      {/* ── 상단 헤더 ── */}
-      <div className="rounded-xl p-5" style={{
-        background: isDegraded ? "#fef2f2" : "linear-gradient(135deg, #fffbeb, #fef9c3)",
-        border: `1px solid ${isDegraded ? "#fca5a5" : "#fde68a"}`,
-        borderLeft: `4px solid ${isDegraded ? "#dc2626" : "#f59e0b"}`,
-      }}>
-        <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-base font-black" style={{ color: "#111" }}>{serviceName}</span>
-            {status.is_manual_pause && (
-              <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#fbbf24", color: "#78350f" }}>⏸ PAUSED</span>
-            )}
-            {!status.is_manual_pause && status.paused && (
-              <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: "#bae6fd", color: "#0369a1" }}>⏱ AUTO PAUSE</span>
-            )}
-            {isDegraded && (
-              <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#dc2626", color: "#fff" }}>⛔ DEGRADED</span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg" style={{ background: "rgba(0,0,0,0.06)" }}>
-              <span className="text-xs font-mono font-bold" style={{ color: "#374151" }}>⏱ {fmtElapsed(elapsed)}</span>
-            </div>
-            <div className="px-3 py-1.5 rounded-lg" style={{ background: "rgba(0,0,0,0.06)" }}>
-              <span className="text-xs font-medium" style={{ color: "#374151" }}>Step {status.current_step_index + 1} / {status.steps_total}</span>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2 px-4 py-2 rounded-lg" style={{ background: "#f0fdf4", border: "1px solid #86efac" }}>
-            <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#16a34a" }} />
-            <span className="text-xs font-medium" style={{ color: "#166534" }}>Stable</span>
-            <span className="text-xs font-mono font-black" style={{ color: "#15803d" }}>{stableShort}</span>
-          </div>
-          <div className="flex items-center gap-1" style={{ color: "#9ca3af" }}>
-            <div style={{ width: 20, height: 2, background: "#d1d5db" }} />
-            <span className="text-sm">→</span>
-            <div style={{ width: 20, height: 2, background: "#d1d5db" }} />
-          </div>
-          <div className="flex items-center gap-2 px-4 py-2 rounded-lg" style={{ background: "#fffbeb", border: "1px solid #fde68a" }}>
-            <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#f59e0b" }} />
-            <span className="text-xs font-medium" style={{ color: "#92400e" }}>Canary</span>
-            <span className="text-xs font-mono font-black" style={{ color: "#b45309" }}>{canaryShort}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ── DB DDL 안전 체크 ── */}
-      {status.is_manual_pause && (
-        <div className="rounded-xl p-4" style={{ background: "#fefce8", border: "1px solid #fde68a", borderLeft: "4px solid #f59e0b" }}>
-          <div className="flex items-start gap-3 mb-3">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base flex-shrink-0" style={{ background: "#fef3c7" }}>⚠️</div>
+      {/* 자동 롤백 감지 배너 */}
+      {isDegraded && (() => {
+        const failedRun = status.analysis_runs.find((r) => r.phase === "Failed" || r.phase === "Error");
+        const failedMetric = failedRun?.metric_details?.find((m) => m.phase === "Failed" || m.failed > 0);
+        return (
+          <div className="rounded-xl p-4 flex items-start gap-3" style={{ background: "#fef2f2", border: "2px solid #dc2626" }}>
+            <span style={{ fontSize: 24 }}>🚨</span>
             <div>
-              <p className="text-xs font-bold mb-0.5" style={{ color: "#92400e" }}>CRITICAL SAFETY CHECK REQUIRED</p>
-              <p className="text-xs leading-relaxed" style={{ color: "#a16207" }}>
-                DB 스키마 변경(DDL)이 포함된 배포라면 롤백 시 Data Corruption 위험이 있습니다. 반드시 교차 검증 후 승인하세요.
+              <p className="font-black text-sm" style={{ color: "#dc2626" }}>자동 롤백 감지 — AnalysisRun 실패</p>
+              <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
+                카나리 트래픽에서 이상 징후가 감지되어 시스템이 자동으로 안정 버전({status.stable_image || "stable"})으로 롤백했습니다.
               </p>
+              {failedMetric && (
+                <p className="text-xs mt-1 font-semibold" style={{ color: "#dc2626" }}>
+                  원인: {failedMetric.name} — {failedMetric.failed}회 임계치 초과 (최신값: {failedMetric.latest_value?.toFixed(2) ?? "-"}%)
+                </p>
+              )}
             </div>
           </div>
-          <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg" style={{ background: "#fef9c3" }}>
-            <input type="checkbox" checked={ddlChecked} onChange={(e) => onDdlCheck(e.target.checked)} className="w-4 h-4 accent-amber-500 flex-shrink-0" />
-            <span className="text-xs font-medium" style={{ color: "#78350f" }}>
-              DB 스키마 변경 포함 여부를 확인했으며, 마이그레이션 교차 검증을 완료했습니다.
-            </span>
-          </label>
+        );
+      })()}
+
+      {/* ══ SECTION 1: Deployment Context & Safety ══ */}
+      <section className="bg-white rounded-2xl overflow-hidden shadow-sm" style={{ border: "1px solid rgba(0,0,0,0.07)" }}>
+        <div className="px-6 pt-5 pb-5">
+          <div className="flex items-start justify-between gap-4 mb-5">
+            <div>
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <h2 className="text-2xl font-bold tracking-tight" style={{ color: "#0f1117" }}>{serviceName}</h2>
+                {status.is_manual_pause && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold"
+                    style={{ background: "#fef3c7", border: "1px solid #fbbf24", color: "#78350f" }}>⏸ PAUSED</span>
+                )}
+                {!status.is_manual_pause && status.paused && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
+                    style={{ background: "#e0f2fe", border: "1px solid #7dd3fc", color: "#0369a1" }}>⏱ AUTO PAUSE</span>
+                )}
+                {isDegraded && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold"
+                    style={{ background: "#fee2e2", border: "1px solid #fca5a5", color: "#b91c1c" }}>⛔ DEGRADED</span>
+                )}
+              </div>
+              <p className="text-xs" style={{ color: "#6b7280" }}>Progressive Canary Delivery · namespace: fiveline</p>
+            </div>
+            <div className="text-right text-xs font-mono flex-shrink-0" style={{ color: "#9ca3af" }}>
+              <p>Step {status.current_step_index + 1} / {status.steps_total}</p>
+              <p className="mt-0.5" style={{ color: "#f59e0b" }}>⏱ {fmtElapsed(elapsed)}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl" style={{ background: "#eff6ff", border: "1px solid #bfdbfe" }}>
+              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "#3b82f6", boxShadow: "0 0 0 3px #bfdbfe" }} />
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest mb-0.5" style={{ color: "#1d4ed8" }}>Stable</p>
+                <p className="text-xs font-mono" style={{ color: "#1e40af" }}>{stableShort}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1" style={{ color: "#d1d5db" }}>
+              <div style={{ width: 16, height: 1, background: "#d1d5db" }} />
+              <span className="text-sm">→</span>
+            </div>
+            <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl" style={{ background: "#ecfdf5", border: "1px solid #6ee7b7" }}>
+              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "#10b981", boxShadow: "0 0 0 3px #a7f3d0" }} />
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest mb-0.5" style={{ color: "#059669" }}>Canary</p>
+                <p className="text-xs font-mono" style={{ color: "#065f46" }}>{canaryShort}</p>
+              </div>
+            </div>
+            <div className="ml-auto flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "#f8fafc", border: "1px solid rgba(0,0,0,0.07)" }}>
+              <div className="flex h-2 rounded-full overflow-hidden gap-px" style={{ width: 96 }}>
+                <div style={{ background: "#60a5fa", flex: `${100 - status.current_weight} 1 0%` }} />
+                <div style={{ background: "#34d399", flex: `${Math.max(status.current_weight, 1)} 1 0%` }} />
+              </div>
+              <span className="text-xs font-mono" style={{ color: "#64748b" }}>{100 - status.current_weight} / {status.current_weight}</span>
+            </div>
+          </div>
         </div>
-      )}
-
-      {/* ── 중단: 좌(2/3) + 우(1/3) ── */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: "2fr 1fr" }}>
-
-        {/* 좌 */}
-        <div className="space-y-4">
-          {/* 트래픽 바 */}
-          <div className="bg-white rounded-xl p-5 shadow-sm" style={{ border: "1px solid #f3f4f6" }}>
-            <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "#9ca3af" }}>Traffic Distribution</p>
-            <div className="flex rounded-xl overflow-hidden mb-3" style={{ height: 36, boxShadow: "inset 0 1px 3px rgba(0,0,0,0.08)" }}>
-              <div className="flex items-center justify-center text-xs font-bold transition-all"
-                style={{ width: `${100 - status.current_weight}%`, background: "linear-gradient(90deg, #16a34a, #22c55e)", color: "#fff" }}>
-                {100 - status.current_weight}% Stable
-              </div>
-              <div className="flex items-center justify-center text-xs font-bold transition-all"
-                style={{ width: `${status.current_weight}%`, background: isDegraded ? "linear-gradient(90deg, #dc2626, #ef4444)" : "linear-gradient(90deg, #f59e0b, #fbbf24)", color: "#fff" }}>
-                {status.current_weight}% Canary
-              </div>
-            </div>
-            <div className="flex justify-between">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ background: "#16a34a" }} />
-                <span className="text-xs" style={{ color: "#6b7280" }}>Stable · <span className="font-mono font-medium">{stableShort}</span></span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs" style={{ color: "#6b7280" }}>Canary · <span className="font-mono font-medium">{canaryShort}</span></span>
-                <span className="w-2 h-2 rounded-full" style={{ background: isDegraded ? "#dc2626" : "#f59e0b" }} />
-              </div>
+        <div style={{ borderTop: "1px solid #fef3c7", background: "linear-gradient(to right, #fffbeb, #fefce8)" }} className="px-6 py-4">
+          <div className="flex items-start gap-3">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 text-sm" style={{ background: "#fbbf24" }}>⚠️</div>
+            <div className="flex-1">
+              <p className="text-xs font-bold uppercase tracking-widest mb-1.5" style={{ color: "#92400e" }}>Critical Safety Check Required</p>
+              <p className="text-sm font-medium leading-relaxed mb-3.5" style={{ color: "#78350f" }}>
+                DB 스키마 변경(DDL)이 포함된 배포인가요? 롤백 시 Data Corruption 위험이 있으니 반드시 교차 검증 후 승인하세요.
+              </p>
+              <label className="flex items-center gap-2.5 cursor-pointer select-none" style={{ width: "fit-content" }}>
+                <div
+                  onClick={() => onDdlCheck(!ddlChecked)}
+                  className="flex items-center justify-center rounded-md border-2 flex-shrink-0 transition-all duration-200 cursor-pointer"
+                  style={{ width: 18, height: 18, background: ddlChecked ? "#f59e0b" : "#fff", borderColor: ddlChecked ? "#f59e0b" : "#fbbf24" }}>
+                  {ddlChecked && <span className="text-white text-xs font-bold leading-none">✓</span>}
+                </div>
+                <span className="text-sm font-semibold" style={{ color: "#92400e" }}>
+                  DB 스키마 변경 포함 여부를 확인했으며, 마이그레이션 교차 검증을 완료했습니다.
+                </span>
+              </label>
             </div>
           </div>
+        </div>
+      </section>
 
-          {/* 스테퍼 */}
-          {status.steps_info.length > 0 && (
-            <div className="bg-white rounded-xl p-5 shadow-sm" style={{ border: "1px solid #f3f4f6" }}>
-              <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: "#9ca3af" }}>Deployment Stages</p>
-              <div className="flex items-start">
-                {status.steps_info.map((step, idx) => {
-                  const isCompleted = idx < status.current_step_index;
-                  const isCurrent = idx === status.current_step_index;
-                  const isAnalysisStep = step.type === "analysis";
-                  const analysisIdx = status.steps_info.slice(0, idx).filter((s) => s.type === "analysis").length;
-                  const runForThis = isAnalysisStep ? status.analysis_runs[analysisIdx] : null;
-                  let dotBg = "#f3f4f6"; let dotColor = "#d1d5db"; let shadow = "";
-                  if (isCompleted) { dotBg = "#dcfce7"; dotColor = "#16a34a"; }
-                  if (isCurrent && !isDegraded) { dotBg = "#fef3c7"; dotColor = "#f59e0b"; shadow = "0 0 0 3px #fde68a"; }
-                  if (isCurrent && isDegraded) { dotBg = "#fee2e2"; dotColor = "#dc2626"; shadow = "0 0 0 3px #fca5a5"; }
-                  if (runForThis?.phase === "Error" && isCompleted) { dotBg = "#fef3c7"; dotColor = "#d97706"; }
-                  return (
-                    <div key={idx} className="flex items-center flex-1">
-                      <div className="flex flex-col items-center" style={{ minWidth: 48 }}>
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all"
-                          style={{ background: dotBg, color: dotColor, boxShadow: shadow }}>
-                          {isCompleted ? (runForThis?.phase === "Error" ? "⚠" : "✓") : isCurrent ? (isDegraded ? "✕" : "●") : <span style={{ color: "#d1d5db", fontSize: 10 }}>{idx + 1}</span>}
-                        </div>
-                        <span className="text-center mt-1.5" style={{ fontSize: 9, color: isCurrent ? "#111" : isCompleted ? "#6b7280" : "#d1d5db", fontWeight: isCurrent ? 700 : 500, lineHeight: 1.3, maxWidth: 48 }}>
-                          {stepLabel(step)}
-                        </span>
-                        {isAnalysisStep && runForThis && (
-                          <span className="mt-0.5 px-1 rounded" style={{ fontSize: 8, background: runForThis.phase === "Successful" ? "#dcfce7" : "#fef3c7", color: runForThis.phase === "Successful" ? "#16a34a" : "#d97706" }}>
-                            {runForThis.phase === "Successful" ? "통과" : runForThis.phase === "Error" ? "오류" : runForThis.phase === "Failed" ? "실패" : "실행중"}
-                          </span>
-                        )}
-                      </div>
-                      {idx < status.steps_info.length - 1 && (
-                        <div className="h-0.5 flex-1 mx-0.5 -mt-5" style={{ background: isCompleted ? "#86efac" : "#f3f4f6" }} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+      {/* ══ SECTION 2: Pipeline Stepper ══ */}
+      <section className="bg-white rounded-2xl shadow-sm px-6 py-5" style={{ border: "1px solid rgba(0,0,0,0.07)" }}>
+        <div className="flex items-center gap-2 mb-4">
+          <span style={{ color: "#0ea5e9", fontSize: 13 }}>▶</span>
+          <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#6b7280", fontFamily: "monospace" }}>Pipeline Progress</span>
+          <span className="ml-auto text-xs font-mono px-2 py-0.5 rounded" style={{ color: "#94a3b8", background: "#f1f5f9" }}>
+            Step {status.current_step_index + 1} / {status.steps_total}
+          </span>
+        </div>
+        <div className="relative" style={{ minHeight: 94 }}>
+          <div className="absolute rounded-full" style={{ top: 19, left: 40, right: 40, height: 2, background: "#e2e8f0" }} />
+          {completedCount > 0 && (
+            <div className="absolute rounded-full transition-all" style={{
+              top: 19, left: 40, height: 2, background: "#34d399",
+              width: `calc((100% - 80px) * ${completedCount / (DISPLAY_STEPS.length - 1)})`,
+            }} />
           )}
-
-          {/* 실시간 메트릭 카드 */}
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: "ERROR RATE", value: probe ? `${probe.error_rate.toFixed(2)}%` : (metrics ? `${metrics.error_rate.toFixed(2)}%` : "-"), warn: (probe?.error_rate ?? 0) > 5 || (metrics?.error_rate ?? 0) > 5, sub: probe ? `canary ${probe.error_rate.toFixed(2)}%` : "ALB 전체", accent: "#ef4444" },
-              { label: "P99 LATENCY", value: probe ? `${probe.p99_latency_ms}ms` : (metrics ? `${metrics.p99_latency_ms}ms` : "-"), warn: (probe?.p99_latency_ms ?? 0) > 1000, sub: probe ? `avg ${probe.avg_latency_ms}ms` : "ALB 전체", accent: "#f59e0b" },
-              { label: "TOTAL REQ", value: metrics ? metrics.total_requests.toLocaleString() : "-", warn: false, sub: "최근 5분", accent: "#6366f1" },
-            ].map(({ label, value, warn, sub, accent }) => (
-              <div key={label} className="bg-white rounded-xl p-4 shadow-sm" style={{ border: "1px solid #f3f4f6", borderTop: `3px solid ${warn ? "#ef4444" : accent}` }}>
-                <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "#9ca3af" }}>{label}</p>
-                <p className="text-2xl font-black leading-none mb-1" style={{ color: warn ? "#dc2626" : "#111" }}>{value}</p>
-                <p className="text-xs" style={{ color: "#9ca3af" }}>{sub}</p>
+          <div className="relative flex items-start justify-between">
+            {stepsWithStatus.map((step, idx) => (
+              <div key={idx} className="flex flex-col items-center gap-1.5" style={{ width: "25%" }}>
+                <div className="flex items-center justify-center rounded-full border-2 z-10 transition-all"
+                  style={{
+                    width: 38, height: 38,
+                    background: step.isCompleted ? "#10b981" : "#fff",
+                    borderColor: step.isCompleted ? "#10b981" : step.isCurrent ? (isDegraded ? "#dc2626" : "#fbbf24") : "#e2e8f0",
+                    boxShadow: step.isCurrent ? `0 0 0 4px ${isDegraded ? "#fca5a580" : "#fde68a80"}` : undefined,
+                  }}>
+                  {step.isCompleted && <span className="text-white font-bold" style={{ fontSize: 14 }}>✓</span>}
+                  {step.isCurrent && (
+                    <span className="rounded-full animate-pulse"
+                      style={{ width: 10, height: 10, display: "inline-block", background: isDegraded ? "#dc2626" : "#fbbf24" }} />
+                  )}
+                  {!step.isCompleted && !step.isCurrent && (
+                    <span className="text-xs font-bold" style={{ color: "#d1d5db" }}>{idx + 1}</span>
+                  )}
+                </div>
+                <span className="text-sm font-bold" style={{
+                  color: step.isCompleted ? "#059669" : step.isCurrent ? (isDegraded ? "#dc2626" : "#d97706") : "#d1d5db",
+                  fontFamily: "monospace",
+                }}>{step.pct}</span>
+                <span className="text-xs font-semibold text-center leading-tight" style={{
+                  color: step.isCompleted ? "#059669" : step.isCurrent ? (isDegraded ? "#dc2626" : "#d97706") : "#d1d5db",
+                }}>{step.labelKo}</span>
               </div>
             ))}
           </div>
+        </div>
+        {status.is_manual_pause && (
+          <div className="mt-4 flex items-center gap-2.5 px-4 py-3 rounded-xl" style={{ background: "#fffbeb", border: "1px solid #fde68a" }}>
+            <span>⏸</span>
+            <p className="text-sm" style={{ color: "#92400e" }}>
+              <strong>파이프라인 일시 정지됨</strong> — {status.current_weight}% 트래픽 단계에서 수동 승인을 기다리고 있습니다. 하단의 AI 분석 결과를 검토한 후 최종 결정을 내려주세요.
+            </p>
+          </div>
+        )}
+      </section>
 
-          {/* 분석 결과 */}
-          {status.analysis_runs.length > 0 && (
-            <div className="bg-white rounded-xl p-5 shadow-sm" style={{ border: "1px solid #f3f4f6" }}>
-              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "#9ca3af" }}>분석 결과 (AnalysisRun)</p>
-              <div className="space-y-3">
-                {status.analysis_runs.map((run, i) => {
-                  const phaseColor = run.phase === "Successful" ? "#16a34a" : run.phase === "Failed" ? "#dc2626" : run.phase === "Running" ? "#f59e0b" : "#6b7280";
-                  const phaseBg = run.phase === "Successful" ? "#f0fdf4" : run.phase === "Failed" ? "#fef2f2" : run.phase === "Running" ? "#fffbeb" : "#f9fafb";
-                  const phaseLabel = run.phase === "Successful" ? "통과" : run.phase === "Failed" ? "실패" : run.phase === "Running" ? "실행 중" : run.phase;
-                  return (
-                    <div key={run.name} className="rounded-lg p-3" style={{ background: phaseBg, border: `1px solid ${phaseColor}22` }}>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-bold" style={{ color: "#374151" }}>{i + 1}차 분석</span>
-                        <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: phaseColor, color: "#fff" }}>{phaseLabel}</span>
-                      </div>
-                      {(run.metric_details ?? []).map((m) => {
-                        const val = m.latest_value;
-                        const threshold = 10.0;
-                        const isOk = val !== null && val <= threshold;
-                        return (
-                          <div key={m.name} className="mt-2">
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs" style={{ color: "#6b7280" }}>{m.name}</span>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs" style={{ color: "#9ca3af" }}>임계치 ≤ {threshold}%</span>
-                                <span className="text-xs font-bold" style={{ color: val === null ? "#9ca3af" : isOk ? "#16a34a" : "#dc2626" }}>
-                                  {val !== null ? `${val.toFixed(2)}%` : "측정 중..."}
-                                </span>
-                                <span>{val === null ? "" : isOk ? "✅" : "❌"}</span>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs" style={{ color: "#9ca3af" }}>통과 {m.successful} / 실패 {m.failed} / 오류 {m.error}</span>
-                            </div>
-                            {m.values.length > 0 && (
-                              <div className="flex gap-1 flex-wrap mt-1">
-                                {m.values.map((v, vi) => (
-                                  <span key={vi} className="text-xs px-1.5 py-0.5 rounded" style={{ background: v <= threshold ? "#dcfce7" : "#fee2e2", color: v <= threshold ? "#16a34a" : "#dc2626", fontFamily: "monospace" }}>
-                                    {v.toFixed(1)}%
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Pod 리소스 */}
-          {podMetrics && podMetrics.pods.length > 0 && (
-            <div className="bg-white rounded-xl p-5 shadow-sm" style={{ border: "1px solid #f3f4f6" }}>
-              <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: "#9ca3af" }}>Pod Resource Usage</p>
-              <div className="space-y-3">
-                {(["stable", "canary"] as const).map((role) => {
-                  const rolePods = podMetrics.pods.filter((p) => p.role === role);
-                  if (rolePods.length === 0) return null;
-                  const avgCpu = rolePods.reduce((s, p) => s + (p.cpu_percent ?? 0), 0) / rolePods.length;
-                  const avgMem = rolePods.reduce((s, p) => s + (p.memory_mib ?? 0), 0) / rolePods.length;
-                  const isCanary = role === "canary";
-                  const stablePods = podMetrics.pods.filter((p) => p.role === "stable");
-                  const stableAvgMem = stablePods.length > 0 ? stablePods.reduce((s, p) => s + (p.memory_mib ?? 0), 0) / stablePods.length : null;
-                  const memWarn = isCanary && stableAvgMem != null && avgMem > stableAvgMem * 2;
-                  const roleColor = isCanary ? "#f59e0b" : "#16a34a";
-                  return (
-                    <div key={role} className="rounded-lg p-3" style={{ background: isCanary ? "#fffbeb" : "#f0fdf4", border: `1px solid ${isCanary ? "#fde68a" : "#bbf7d0"}` }}>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: roleColor, color: "#fff" }}>
-                          {role === "stable" ? "Stable" : "Canary"}
-                        </span>
-                        <span className="text-xs" style={{ color: "#6b7280" }}>{rolePods.length}개 파드</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <div className="flex justify-between mb-1">
-                            <span className="text-xs" style={{ color: "#6b7280" }}>CPU</span>
-                            <span className="text-xs font-bold" style={{ color: "#111" }}>{avgCpu.toFixed(1)}%</span>
-                          </div>
-                          <div className="rounded-full" style={{ height: 4, background: "#e5e7eb" }}>
-                            <div className="h-full rounded-full" style={{ width: `${Math.min(avgCpu, 100)}%`, background: roleColor }} />
-                          </div>
-                        </div>
-                        <div>
-                          <div className="flex justify-between mb-1">
-                            <span className="text-xs" style={{ color: "#6b7280" }}>MEM</span>
-                            <span className="text-xs font-bold" style={{ color: memWarn ? "#dc2626" : "#111" }}>{avgMem.toFixed(0)} MiB {memWarn && "⚠️"}</span>
-                          </div>
-                          <div className="rounded-full" style={{ height: 4, background: "#e5e7eb" }}>
-                            <div className="h-full rounded-full" style={{ width: `${Math.min((avgMem / 512) * 100, 100)}%`, background: memWarn ? "#ef4444" : roleColor }} />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+      {/* ══ SECTION 3: Observability ══ */}
+      <section className="bg-white rounded-2xl shadow-sm px-6 py-5" style={{ border: "1px solid rgba(0,0,0,0.07)" }}>
+        <div className="flex items-center gap-2 mb-4">
+          <span style={{ color: "#0ea5e9" }}>⚡</span>
+          <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#6b7280", fontFamily: "monospace" }}>
+            실시간 관측 데이터 · Canary {status.current_weight}%
+          </span>
+          <div className="ml-auto flex items-center gap-1.5">
+            <span className="rounded-full animate-pulse" style={{ width: 6, height: 6, display: "inline-block", background: "#34d399" }} />
+            <span className="text-xs font-mono" style={{ color: "#94a3b8" }}>Prometheus · 30s</span>
+          </div>
+        </div>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-xs font-semibold" style={{ color: "#1e293b" }}>실시간 카나리 메트릭 분석</p>
+            <p className="text-xs mt-0.5" style={{ color: "#94a3b8" }}>임계치 초과 시 AnalysisRun이 자동으로 롤백을 트리거합니다</p>
+          </div>
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold"
+            style={allPass
+              ? { background: "#ecfdf5", border: "1px solid #6ee7b7", color: "#065f46" }
+              : { background: "#fef2f2", border: "1px solid #fca5a5", color: "#991b1b" }}>
+            {allPass ? "✓ ALL PASS" : "✗ ALERT"}
+          </span>
+        </div>
+        <div className="flex flex-col gap-2 mb-4">
+          <MetricRowNew
+            name="Canary 5xx Error Rate"
+            threshold={`< ${ERROR_RATE_THRESHOLD.toFixed(1)}%`}
+            value={errorRate.toFixed(2)}
+            unit="%"
+            pass={errorPass}
+            margin={errorPass ? `▼ ${(ERROR_RATE_THRESHOLD - errorRate).toFixed(2)}% 여유` : "⚠ 임계치 초과!"}
+          />
+          <MetricRowNew
+            name="P99 Response Latency"
+            threshold={`< ${P99_THRESHOLD}ms`}
+            value={String(p99Ms)}
+            unit="ms"
+            pass={p99Pass}
+            margin={p99Pass ? `▼ ${P99_THRESHOLD - p99Ms}ms 여유` : "⚠ 임계치 초과!"}
+          />
+          <MetricRowNew
+            name="Success Rate (2xx/3xx)"
+            threshold="> 99.5%"
+            value={successRate.toFixed(2)}
+            unit="%"
+            pass={successPass}
+            margin={successPass ? `▲ ${(successRate - 99.5).toFixed(2)}% 여유` : "임계치 미달"}
+          />
+          {totalReq > 0 && (
+            <MetricRowNew
+              name="Total Requests (5m · ALB)"
+              threshold="참고용"
+              value={totalReq.toLocaleString()}
+              unit="건"
+              pass={true}
+              margin="ALB 전체 집계"
+            />
           )}
         </div>
-
-        {/* 우 */}
-        <div className="space-y-4">
-          {/* AI 분석 */}
-          <div className="rounded-xl p-4" style={{ background: "#0f172a", border: "1px solid #1e293b" }}>
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-bold" style={{ color: "#a5b4fc" }}>⚡ AI 분석 요약</p>
-              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "#1e293b", color: "#64748b" }}>Bedrock</span>
-            </div>
-            {latestAI ? (
-              <>
-                <div className="flex items-center gap-2 mb-2.5 flex-wrap">
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-full"
-                    style={{ background: latestAI.ai_recommendation === "계속진행" ? "#064e3b" : "#7f1d1d", color: latestAI.ai_recommendation === "계속진행" ? "#6ee7b7" : "#fca5a5" }}>
-                    {latestAI.ai_recommendation ?? "-"}
-                  </span>
-                  <span className="text-xs font-medium" style={{ color: (AI_STATUS_STYLE[latestAI.ai_status ?? ""] ?? { color: "#64748b" }).color }}>
-                    {(AI_STATUS_STYLE[latestAI.ai_status ?? ""] ?? { emoji: "○" }).emoji} {latestAI.ai_status}
-                  </span>
+        {sparkData.length > 1 && <SparklineChart data={sparkData} />}
+        {status.analysis_runs.length > 0 && (
+          <div className="flex flex-col gap-2 mb-4">
+            {status.analysis_runs.map((run, i) => {
+              const phaseColor = run.phase === "Successful" ? "#059669" : run.phase === "Failed" ? "#dc2626" : run.phase === "Running" ? "#d97706" : "#6b7280";
+              const phaseBg = run.phase === "Successful" ? "#f0fdf4" : run.phase === "Failed" ? "#fef2f2" : run.phase === "Running" ? "#fffbeb" : "#f9fafb";
+              const phaseLabel = run.phase === "Successful" ? "통과" : run.phase === "Failed" ? "실패" : run.phase === "Running" ? "실행 중" : run.phase;
+              const lastMetric = run.metric_details?.[0];
+              return (
+                <div key={run.name} className="flex items-center gap-3 px-3 py-2.5 rounded-lg flex-wrap"
+                  style={{ background: phaseBg, border: `1px solid ${phaseColor}33` }}>
+                  <span className="text-xs font-bold" style={{ color: "#374151" }}>{i + 1}차 AnalysisRun</span>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: phaseColor, color: "#fff" }}>{phaseLabel}</span>
+                  {lastMetric && (
+                    <span className="text-xs font-mono ml-auto" style={{ color: "#6b7280" }}>
+                      {lastMetric.name}: {lastMetric.latest_value?.toFixed(2) ?? "측정 중"}%
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs leading-relaxed" style={{ color: "#94a3b8" }}>{latestAI.ai_reason}</p>
-                {(latestAI.trivy_critical > 0 || latestAI.trivy_high > 0) && (
-                  <div className="flex gap-2 mt-3 flex-wrap">
-                    {latestAI.trivy_critical > 0 && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "#450a0a", color: "#fca5a5" }}>CRITICAL {latestAI.trivy_critical}</span>}
-                    {latestAI.trivy_high > 0 && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "#431407", color: "#fdba74" }}>HIGH {latestAI.trivy_high}</span>}
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="text-xs" style={{ color: "#475569" }}>⏳ AI 분석 대기 중...</p>
+              );
+            })}
+          </div>
+        )}
+        <div className="flex items-center gap-4 pt-1 flex-wrap">
+          <a href="http://argo-rollouts-dashboard.fiveline.store" target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-sm font-semibold transition-colors" style={{ color: "#0ea5e9" }}>
+            ↗ Argo Rollouts
+          </a>
+          <span style={{ color: "#e2e8f0" }}>·</span>
+          <a href={`${GRAFANA_URL}/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-namespace=fiveline`}
+            target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-sm font-semibold transition-colors" style={{ color: "#0ea5e9" }}>
+            ↗ Grafana 네임스페이스
+          </a>
+          <span style={{ color: "#e2e8f0" }}>·</span>
+          <a href={`${GRAFANA_URL}/d/efa86fd1d0c121a26444b636a3f509a8/kubernetes-compute-resources-cluster?orgId=1`}
+            target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-sm font-semibold transition-colors" style={{ color: "#0ea5e9" }}>
+            ↗ Grafana 클러스터
+          </a>
+        </div>
+      </section>
+
+      {/* ══ SECTION 4: AIOps Co-pilot & Actions ══ */}
+      <section className="rounded-2xl overflow-hidden shadow-xl" style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.06)" }}>
+        <div className="px-6 pt-5 pb-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 text-xs"
+              style={{ background: "linear-gradient(135deg, #0ea5e9, #6366f1)" }}>🛡</div>
+            <h3 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#94a3b8", fontFamily: "monospace" }}>
+              AIOps AI 분석 요약
+            </h3>
+            <span className="ml-auto text-xs font-mono px-2 py-0.5 rounded border"
+              style={{ color: "#475569", background: "rgba(255,255,255,0.04)", borderColor: "rgba(255,255,255,0.06)" }}>
+              Powered by AWS Bedrock
+            </span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap mb-4">
+            <DarkMetricChipNew label="5xx" value={`${errorRate.toFixed(2)}%`} pass={errorPass} />
+            <DarkMetricChipNew label="P99" value={`${p99Ms}ms`} pass={p99Pass} />
+            <DarkMetricChipNew label="success" value={`${successRate.toFixed(1)}%`} pass={successPass} />
+            {latestAI && (
+              <DarkMetricChipNew
+                label="AI"
+                value={latestAI.ai_recommendation ?? latestAI.ai_status ?? "-"}
+                pass={latestAI.ai_recommendation === "계속진행"}
+              />
             )}
           </div>
-
-          {/* 임계치 체크 */}
-          {probe && (
-            <div className="bg-white rounded-xl p-4 shadow-sm" style={{ border: "1px solid #f3f4f6" }}>
-              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "#9ca3af" }}>임계치 체크</p>
-              <ThresholdRow label="5xx 에러율" value={probe.error_rate} threshold={ERROR_RATE_THRESHOLD} unit="%" />
-              <ThresholdRow label="P99 응답시간" value={probe.p99_latency_ms} threshold={P99_THRESHOLD} unit="ms" />
+          {latestAI ? (
+            <div>
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <span className="text-xs font-bold px-2.5 py-1 rounded-full"
+                  style={{
+                    background: latestAI.ai_recommendation === "계속진행" ? "#064e3b" : "#7f1d1d",
+                    color: latestAI.ai_recommendation === "계속진행" ? "#6ee7b7" : "#fca5a5",
+                  }}>
+                  {latestAI.ai_recommendation ?? "-"}
+                </span>
+                <span className="text-xs" style={{ color: (AI_STATUS_STYLE[latestAI.ai_status ?? ""] ?? { color: "#64748b" }).color }}>
+                  {(AI_STATUS_STYLE[latestAI.ai_status ?? ""] ?? { emoji: "○" }).emoji} {latestAI.ai_status}
+                  {latestAI.canary_weight ? ` · 단계 ${latestAI.canary_weight}%` : ""}
+                </span>
+              </div>
+              <p className="text-sm leading-relaxed" style={{ color: "#94a3b8" }}>{latestAI.ai_reason}</p>
+              {((latestAI.trivy_critical ?? 0) > 0 || (latestAI.trivy_high ?? 0) > 0) && (
+                <div className="flex gap-2 mt-3 flex-wrap">
+                  {(latestAI.trivy_critical ?? 0) > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "#450a0a", color: "#fca5a5" }}>
+                      CRITICAL {latestAI.trivy_critical}
+                    </span>
+                  )}
+                  {(latestAI.trivy_high ?? 0) > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "#431407", color: "#fdba74" }}>
+                      HIGH {latestAI.trivy_high}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
+          ) : (
+            <p className="text-sm" style={{ color: "#475569" }}>
+              ⏳ AI 분석 대기 중... DynamoDB 데이터는 각 카나리 단계 완료 후 기록됩니다.
+            </p>
           )}
-
-          {/* 승인 / 롤백 */}
-          <div className="space-y-2">
+        </div>
+        <div className="px-6 py-4 flex items-center justify-between gap-3 flex-wrap">
+          {!ddlChecked ? (
+            <p className="flex items-center gap-1.5 text-xs" style={{ color: "#fbbf24" }}>
+              ⚠ 안전 점검을 완료해야 승인 버튼이 활성화됩니다.
+            </p>
+          ) : (
+            <p className="flex items-center gap-1.5 text-xs" style={{ color: "#34d399" }}>
+              ✓ 안전 점검 완료 — 승인 가능 상태입니다.
+            </p>
+          )}
+          <div className="flex items-center gap-2.5 ml-auto">
+            <button
+              onClick={() => onAction("abort")}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
+              style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "#64748b" }}>
+              ⏪ 즉시 롤백
+            </button>
             {status.is_manual_pause && (
               <button
                 onClick={() => onAction("promote")}
                 disabled={!ddlChecked}
-                className="w-full py-3.5 text-sm font-bold rounded-xl transition-all"
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-200"
                 style={{
-                  background: ddlChecked ? "linear-gradient(135deg, #111827, #374151)" : "#e5e7eb",
-                  color: ddlChecked ? "#fff" : "#9ca3af",
-                  cursor: ddlChecked ? "pointer" : "not-allowed",
-                  boxShadow: ddlChecked ? "0 4px 12px rgba(0,0,0,0.15)" : "none",
+                  background: !ddlChecked ? "rgba(14,165,233,0.3)" : "#0ea5e9",
+                  color: !ddlChecked ? "#64748b" : "#fff",
+                  cursor: !ddlChecked ? "not-allowed" : "pointer",
+                  boxShadow: ddlChecked ? "0 4px 14px rgba(14,165,233,0.3)" : "none",
                 }}>
-                ✅ 승인 — 100% 프로덕션 전환
+                ✅ 승인 (100% 프로덕션 전환)
               </button>
             )}
-            {status.is_manual_pause && !ddlChecked && (
-              <p className="text-xs text-center py-1" style={{ color: "#d97706" }}>⚠ 안전 점검을 완료해야 승인 버튼이 활성화됩니다.</p>
-            )}
-            <button
-              onClick={() => onAction("abort")}
-              className="w-full py-3 text-sm font-semibold rounded-xl transition-all"
-              style={{ background: "#fff", border: "1.5px solid #fca5a5", color: "#dc2626" }}>
-              ⏪ 즉시 롤백
-            </button>
           </div>
+        </div>
+      </section>
 
-          {/* Quick Links */}
-          <div className="bg-white rounded-xl p-4 shadow-sm" style={{ border: "1px solid #f3f4f6" }}>
-            <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "#9ca3af" }}>Quick Links</p>
-            <div className="space-y-1">
-              {[
-                { label: "Argo Rollouts", url: "http://argo-rollouts-dashboard.fiveline.store" },
-                { label: "Grafana · 네임스페이스", url: `${GRAFANA_URL}/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-namespace=fiveline` },
-                { label: "Grafana · 클러스터", url: `${GRAFANA_URL}/d/efa86fd1d0c121a26444b636a3f509a8/kubernetes-compute-resources-cluster?orgId=1` },
-              ].map(({ label, url }) => (
-                <a key={label} href={url} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center justify-between text-xs px-3 py-2 rounded-lg"
-                  style={{ color: "#6366f1", background: "#f5f3ff" }}>
-                  <span className="font-medium">{label}</span>
-                  <span>↗</span>
-                </a>
-              ))}
-            </div>
+      {/* Pod 리소스 (접이식) */}
+      {podMetrics && podMetrics.pods.length > 0 && (
+        <details className="bg-white rounded-2xl shadow-sm overflow-hidden" style={{ border: "1px solid rgba(0,0,0,0.07)" }}>
+          <summary className="px-6 py-3 text-xs font-semibold uppercase tracking-wider cursor-pointer select-none" style={{ color: "#9ca3af" }}>
+            ▸ Pod Resource Usage
+          </summary>
+          <div className="px-6 pb-5 space-y-3 pt-2">
+            {(["stable", "canary"] as const).map((role) => {
+              const rolePods = podMetrics.pods.filter((p) => p.role === role);
+              if (rolePods.length === 0) return null;
+              const avgCpu = rolePods.reduce((s, p) => s + (p.cpu_percent ?? 0), 0) / rolePods.length;
+              const avgMem = rolePods.reduce((s, p) => s + (p.memory_mib ?? 0), 0) / rolePods.length;
+              const isCanary = role === "canary";
+              const stablePods = podMetrics.pods.filter((p) => p.role === "stable");
+              const stableAvgMem = stablePods.length > 0 ? stablePods.reduce((s, p) => s + (p.memory_mib ?? 0), 0) / stablePods.length : null;
+              const memWarn = isCanary && stableAvgMem != null && avgMem > stableAvgMem * 2;
+              const roleColor = isCanary ? "#f59e0b" : "#16a34a";
+              return (
+                <div key={role} className="rounded-lg p-3" style={{ background: isCanary ? "#fffbeb" : "#f0fdf4", border: `1px solid ${isCanary ? "#fde68a" : "#bbf7d0"}` }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: roleColor, color: "#fff" }}>
+                      {role === "stable" ? "Stable" : "Canary"}
+                    </span>
+                    <span className="text-xs" style={{ color: "#6b7280" }}>{rolePods.length}개 파드</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="flex justify-between mb-1">
+                        <span className="text-xs" style={{ color: "#6b7280" }}>CPU</span>
+                        <span className="text-xs font-bold" style={{ color: "#111" }}>{avgCpu.toFixed(1)}%</span>
+                      </div>
+                      <div className="rounded-full" style={{ height: 4, background: "#e5e7eb" }}>
+                        <div className="h-full rounded-full" style={{ width: `${Math.min(avgCpu, 100)}%`, background: roleColor }} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between mb-1">
+                        <span className="text-xs" style={{ color: "#6b7280" }}>MEM</span>
+                        <span className="text-xs font-bold" style={{ color: memWarn ? "#dc2626" : "#111" }}>{avgMem.toFixed(0)} MiB {memWarn && "⚠️"}</span>
+                      </div>
+                      <div className="rounded-full" style={{ height: 4, background: "#e5e7eb" }}>
+                        <div className="h-full rounded-full" style={{ width: `${Math.min((avgMem / 512) * 100, 100)}%`, background: memWarn ? "#ef4444" : roleColor }} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
-      </div>
-
-      {/* ── 하단: Grafana ── */}
-      <div className="bg-white rounded-xl overflow-hidden shadow-sm" style={{ border: "1px solid #f3f4f6" }}>
-        <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: "1px solid #f3f4f6" }}>
-          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#9ca3af" }}>Grafana · Live Panel</p>
-          <a href={GRAFANA_URL} target="_blank" rel="noopener noreferrer" className="text-xs font-medium px-3 py-1 rounded-full" style={{ background: "#f5f3ff", color: "#6366f1" }}>전체 화면 ↗</a>
-        </div>
-        <div className="flex items-center justify-center" style={{ height: 200, background: "#0f172a" }}>
-          <div className="text-center">
-            <p className="text-2xl mb-2">📊</p>
-            <p className="text-sm font-medium" style={{ color: "#64748b" }}>Grafana 카나리 대시보드</p>
-            <p className="text-xs mt-1" style={{ color: "#475569" }}>패널 URL 연결 후 활성화됩니다</p>
-          </div>
-        </div>
-      </div>
+        </details>
+      )}
     </div>
   );
 }
