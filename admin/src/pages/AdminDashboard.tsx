@@ -741,16 +741,20 @@ function Pagination({ page, totalPages, onPageChange }: { page: number; totalPag
 
 const GRAFANA_DASHBOARDS = [
   {
+    title: "SLO / Error Budget",
+    url: `${GRAFANA_URL}/public-dashboards/ce4bc47ff09a49f284d24e8fbb9a1094`,
+  },
+  {
     title: "Kubernetes 클러스터 리소스",
-    url: `${GRAFANA_URL}/d/efa86fd1d0c121a26444b636a3f509a8/kubernetes-compute-resources-cluster?orgId=1&kiosk&theme=light`,
+    url: `${GRAFANA_URL}/public-dashboards/27f58fb8684940c9bae07469185e1bed`,
   },
   {
     title: "Kubernetes 네임스페이스별 리소스",
-    url: `${GRAFANA_URL}/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-namespace=fiveline&kiosk&theme=light`,
+    url: `${GRAFANA_URL}/public-dashboards/1e3fff81580d411ba1eddc8d664aebed?var-namespace=fiveline`,
   },
   {
     title: "Kubernetes Pod 상세",
-    url: `${GRAFANA_URL}/d/6581e46e4e5c7ba40a07646395ef7b23/kubernetes-compute-resources-pod?orgId=1&var-namespace=fiveline&kiosk&theme=light`,
+    url: `${GRAFANA_URL}/public-dashboards/b2f3c5fd505c4608976cb07064fd3d81?var-namespace=fiveline`,
   },
 ];
 
