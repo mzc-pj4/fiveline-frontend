@@ -53,7 +53,7 @@ type AdminProduct = { id: number; name: string; category: string; brand: string 
 const TABS = ["대시보드", "주문관리", "사용자", "상품관리", "모니터링", "배포관리"] as const;
 type Tab = typeof TABS[number];
 
-const GRAFANA_URL = "https://grafana.fiveline.store";
+const GRAFANA_URL = "http://k8s-monitori-grafanai-a70700f49c-941066113.ap-northeast-2.elb.amazonaws.com";
 
 const STATUS_LABEL: Record<string, string> = { SUCCESS: "결제완료", FAILED: "결제실패", PENDING: "처리중" };
 const STATUS_COLOR: Record<string, { background: string; color: string }> = {
@@ -1175,23 +1175,8 @@ function CanaryStatusPanel({
   // phase === "Progressing" 도 진행 중으로 처리 (ArgoCD sync 직후 두 해시가 같은 경우 대응)
   const actuallyInProgress = status.in_progress || status.phase === "Progressing";
 
-  if (!actuallyInProgress) {
-    if (status.phase !== "Healthy") return null;
-    const tagShort = status.stable_image ? status.stable_image.split("-").slice(0, 2).join("-") : null;
-    return (
-      <div className="rounded-xl p-5 flex items-center gap-4 flex-wrap"
-        style={{ background: "linear-gradient(135deg, #f0fdf4, #dcfce7)", border: "1px solid #86efac" }}>
-        <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl" style={{ background: "#16a34a" }}>✅</div>
-        <div>
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="text-sm font-bold" style={{ color: "#111" }}>{serviceName}</span>
-            {tagShort && <span className="text-xs font-mono px-2 py-0.5 rounded-md" style={{ background: "#bbf7d0", color: "#14532d" }}>{tagShort}</span>}
-          </div>
-          <span className="text-xs" style={{ color: "#16a34a" }}>카나리 배포가 성공적으로 완료되었습니다</span>
-        </div>
-      </div>
-    );
-  }
+  if (!actuallyInProgress && status.phase !== "Healthy") return null;
+  const isCompleted = !actuallyInProgress && status.phase === "Healthy";
 
   const isDegraded = status.phase === "Degraded";
   const stableShort = status.stable_image ? status.stable_image.split("-").slice(0, 2).join("-") : "-";
@@ -1216,21 +1201,40 @@ function CanaryStatusPanel({
   ];
   const w = status.current_weight;
   const stepsWithStatus = DISPLAY_STEPS.map((s) => {
-    const isCompleted = w >= s.max;
+    if (isCompleted) return { ...s, isCompleted: true, isCurrent: false, labelKo: "완료" };
+    const stepDone = w >= s.max;
     const isCurrent = w >= s.min && w < s.max;
     let labelKo = "대기 중";
-    if (isCompleted) labelKo = "완료";
+    if (stepDone) labelKo = "완료";
     else if (isCurrent) {
       if (s.pct === "50%" && status.is_manual_pause) labelKo = "수동 승인 대기";
       else if (status.paused) labelKo = "분석 중";
       else labelKo = "진행 중";
     }
-    return { ...s, isCompleted, isCurrent, labelKo };
+    return { ...s, isCompleted: stepDone, isCurrent, labelKo };
   });
   const completedCount = stepsWithStatus.filter((s) => s.isCompleted).length;
 
   return (
     <div className="space-y-4">
+      {/* 배포 완료 배너 */}
+      {isCompleted && (() => {
+        const tagShort = status.stable_image ? status.stable_image.split("-").slice(0, 2).join("-") : null;
+        return (
+          <div className="rounded-xl p-5 flex items-center gap-4 flex-wrap"
+            style={{ background: "linear-gradient(135deg, #f0fdf4, #dcfce7)", border: "1px solid #86efac" }}>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl flex-shrink-0" style={{ background: "#16a34a" }}>✅</div>
+            <div>
+              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                <span className="text-sm font-bold" style={{ color: "#111" }}>{serviceName}</span>
+                {tagShort && <span className="text-xs font-mono px-2 py-0.5 rounded-md" style={{ background: "#bbf7d0", color: "#14532d" }}>{tagShort}</span>}
+              </div>
+              <span className="text-xs" style={{ color: "#16a34a" }}>카나리 배포가 성공적으로 완료되었습니다 — 전체 트래픽이 신규 버전으로 전환되었습니다</span>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* 자동 롤백 감지 배너 */}
       {isDegraded && (() => {
         const failedRun = status.analysis_runs.find((r) => r.phase === "Failed" || r.phase === "Error");
@@ -1276,8 +1280,13 @@ function CanaryStatusPanel({
               <p className="text-xs" style={{ color: "#6b7280" }}>Progressive Canary Delivery · namespace: fiveline</p>
             </div>
             <div className="text-right text-xs font-mono flex-shrink-0" style={{ color: "#9ca3af" }}>
-              <p>Step {status.current_step_index + 1} / {status.steps_total}</p>
-              <p className="mt-0.5" style={{ color: "#f59e0b" }}>⏱ {fmtElapsed(elapsed)}</p>
+              {isCompleted
+                ? <p className="font-bold" style={{ color: "#16a34a" }}>✓ 배포 완료</p>
+                : <>
+                    <p>Step {status.current_step_index + 1} / {status.steps_total}</p>
+                    <p className="mt-0.5" style={{ color: "#f59e0b" }}>⏱ {fmtElapsed(elapsed)}</p>
+                  </>
+              }
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -1301,35 +1310,44 @@ function CanaryStatusPanel({
             </div>
             <div className="ml-auto flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "#f8fafc", border: "1px solid rgba(0,0,0,0.07)" }}>
               <div className="flex h-2 rounded-full overflow-hidden gap-px" style={{ width: 96 }}>
-                <div style={{ background: "#60a5fa", flex: `${100 - status.current_weight} 1 0%` }} />
-                <div style={{ background: "#34d399", flex: `${Math.max(status.current_weight, 1)} 1 0%` }} />
+                {isCompleted
+                  ? <div style={{ background: "#60a5fa", flex: "100 1 0%" }} />
+                  : <>
+                      <div style={{ background: "#60a5fa", flex: `${100 - status.current_weight} 1 0%` }} />
+                      <div style={{ background: "#34d399", flex: `${Math.max(status.current_weight, 1)} 1 0%` }} />
+                    </>
+                }
               </div>
-              <span className="text-xs font-mono" style={{ color: "#64748b" }}>{100 - status.current_weight} / {status.current_weight}</span>
+              <span className="text-xs font-mono" style={{ color: "#64748b" }}>
+                {isCompleted ? "100 / 0" : `${100 - status.current_weight} / ${status.current_weight}`}
+              </span>
             </div>
           </div>
         </div>
-        <div style={{ borderTop: "1px solid #fef3c7", background: "linear-gradient(to right, #fffbeb, #fefce8)" }} className="px-6 py-4">
-          <div className="flex items-start gap-3">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 text-sm" style={{ background: "#fbbf24" }}>⚠️</div>
-            <div className="flex-1">
-              <p className="text-xs font-bold uppercase tracking-widest mb-1.5" style={{ color: "#92400e" }}>Critical Safety Check Required</p>
-              <p className="text-sm font-medium leading-relaxed mb-3.5" style={{ color: "#78350f" }}>
-                DB 스키마 변경(DDL)이 포함된 배포인가요? 롤백 시 Data Corruption 위험이 있으니 반드시 교차 검증 후 승인하세요.
-              </p>
-              <label className="flex items-center gap-2.5 cursor-pointer select-none" style={{ width: "fit-content" }}>
-                <div
-                  onClick={() => onDdlCheck(!ddlChecked)}
-                  className="flex items-center justify-center rounded-md border-2 flex-shrink-0 transition-all duration-200 cursor-pointer"
-                  style={{ width: 18, height: 18, background: ddlChecked ? "#f59e0b" : "#fff", borderColor: ddlChecked ? "#f59e0b" : "#fbbf24" }}>
-                  {ddlChecked && <span className="text-white text-xs font-bold leading-none">✓</span>}
-                </div>
-                <span className="text-sm font-semibold" style={{ color: "#92400e" }}>
-                  DB 스키마 변경 포함 여부를 확인했으며, 마이그레이션 교차 검증을 완료했습니다.
-                </span>
-              </label>
+        {!isCompleted && (
+          <div style={{ borderTop: "1px solid #fef3c7", background: "linear-gradient(to right, #fffbeb, #fefce8)" }} className="px-6 py-4">
+            <div className="flex items-start gap-3">
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 text-sm" style={{ background: "#fbbf24" }}>⚠️</div>
+              <div className="flex-1">
+                <p className="text-xs font-bold uppercase tracking-widest mb-1.5" style={{ color: "#92400e" }}>Critical Safety Check Required</p>
+                <p className="text-sm font-medium leading-relaxed mb-3.5" style={{ color: "#78350f" }}>
+                  DB 스키마 변경(DDL)이 포함된 배포인가요? 롤백 시 Data Corruption 위험이 있으니 반드시 교차 검증 후 승인하세요.
+                </p>
+                <label className="flex items-center gap-2.5 cursor-pointer select-none" style={{ width: "fit-content" }}>
+                  <div
+                    onClick={() => onDdlCheck(!ddlChecked)}
+                    className="flex items-center justify-center rounded-md border-2 flex-shrink-0 transition-all duration-200 cursor-pointer"
+                    style={{ width: 18, height: 18, background: ddlChecked ? "#f59e0b" : "#fff", borderColor: ddlChecked ? "#f59e0b" : "#fbbf24" }}>
+                    {ddlChecked && <span className="text-white text-xs font-bold leading-none">✓</span>}
+                  </div>
+                  <span className="text-sm font-semibold" style={{ color: "#92400e" }}>
+                    DB 스키마 변경 포함 여부를 확인했으며, 마이그레이션 교차 검증을 완료했습니다.
+                  </span>
+                </label>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </section>
 
       {/* ══ SECTION 2: Pipeline Stepper ══ */}
@@ -1337,8 +1355,8 @@ function CanaryStatusPanel({
         <div className="flex items-center gap-2 mb-4">
           <span style={{ color: "#0ea5e9", fontSize: 13 }}>▶</span>
           <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#6b7280", fontFamily: "monospace" }}>Pipeline Progress</span>
-          <span className="ml-auto text-xs font-mono px-2 py-0.5 rounded" style={{ color: "#94a3b8", background: "#f1f5f9" }}>
-            Step {status.current_step_index + 1} / {status.steps_total}
+          <span className="ml-auto text-xs font-mono px-2 py-0.5 rounded" style={{ color: isCompleted ? "#059669" : "#94a3b8", background: isCompleted ? "#dcfce7" : "#f1f5f9" }}>
+            {isCompleted ? "✓ All Steps Completed" : `Step ${status.current_step_index + 1} / ${status.steps_total}`}
           </span>
         </div>
         <div className="relative" style={{ minHeight: 94 }}>
@@ -1346,7 +1364,7 @@ function CanaryStatusPanel({
           {completedCount > 0 && (
             <div className="absolute rounded-full transition-all" style={{
               top: 19, left: 40, height: 2, background: "#34d399",
-              width: `calc((100% - 80px) * ${completedCount / (DISPLAY_STEPS.length - 1)})`,
+              width: `calc((100% - 80px) * ${Math.min(completedCount, DISPLAY_STEPS.length - 1) / (DISPLAY_STEPS.length - 1)})`,
             }} />
           )}
           <div className="relative flex items-start justify-between">
@@ -1389,8 +1407,8 @@ function CanaryStatusPanel({
         )}
       </section>
 
-      {/* ══ SECTION 3: Observability ══ */}
-      <section className="bg-white rounded-2xl shadow-sm px-6 py-5" style={{ border: "1px solid rgba(0,0,0,0.07)" }}>
+      {/* ══ SECTION 3: Observability (진행 중일 때만 표시) ══ */}
+      {!isCompleted && (<section className="bg-white rounded-2xl shadow-sm px-6 py-5" style={{ border: "1px solid rgba(0,0,0,0.07)" }}>
         <div className="flex items-center gap-2 mb-4">
           <span style={{ color: "#0ea5e9" }}>⚡</span>
           <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#6b7280", fontFamily: "monospace" }}>
@@ -1490,7 +1508,7 @@ function CanaryStatusPanel({
             ↗ Grafana 클러스터
           </a>
         </div>
-      </section>
+      </section>)}
 
       {/* ══ SECTION 4: AIOps Co-pilot & Actions ══ */}
       <section className="rounded-2xl overflow-hidden shadow-xl" style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.06)" }}>
@@ -1555,39 +1573,41 @@ function CanaryStatusPanel({
             </p>
           )}
         </div>
-        <div className="px-6 py-4 flex items-center justify-between gap-3 flex-wrap">
-          {!ddlChecked ? (
-            <p className="flex items-center gap-1.5 text-xs" style={{ color: "#fbbf24" }}>
-              ⚠ 안전 점검을 완료해야 승인 버튼이 활성화됩니다.
-            </p>
-          ) : (
-            <p className="flex items-center gap-1.5 text-xs" style={{ color: "#34d399" }}>
-              ✓ 안전 점검 완료 — 승인 가능 상태입니다.
-            </p>
-          )}
-          <div className="flex items-center gap-2.5 ml-auto">
-            <button
-              onClick={() => onAction("abort")}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
-              style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "#64748b" }}>
-              ⏪ 즉시 롤백
-            </button>
-            {status.is_manual_pause && (
-              <button
-                onClick={() => onAction("promote")}
-                disabled={!ddlChecked}
-                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-200"
-                style={{
-                  background: !ddlChecked ? "rgba(14,165,233,0.3)" : "#0ea5e9",
-                  color: !ddlChecked ? "#64748b" : "#fff",
-                  cursor: !ddlChecked ? "not-allowed" : "pointer",
-                  boxShadow: ddlChecked ? "0 4px 14px rgba(14,165,233,0.3)" : "none",
-                }}>
-                ✅ 승인 (100% 프로덕션 전환)
-              </button>
+        {!isCompleted && (
+          <div className="px-6 py-4 flex items-center justify-between gap-3 flex-wrap">
+            {!ddlChecked ? (
+              <p className="flex items-center gap-1.5 text-xs" style={{ color: "#fbbf24" }}>
+                ⚠ 안전 점검을 완료해야 승인 버튼이 활성화됩니다.
+              </p>
+            ) : (
+              <p className="flex items-center gap-1.5 text-xs" style={{ color: "#34d399" }}>
+                ✓ 안전 점검 완료 — 승인 가능 상태입니다.
+              </p>
             )}
+            <div className="flex items-center gap-2.5 ml-auto">
+              <button
+                onClick={() => onAction("abort")}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
+                style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "#64748b" }}>
+                ⏪ 즉시 롤백
+              </button>
+              {status.is_manual_pause && (
+                <button
+                  onClick={() => onAction("promote")}
+                  disabled={!ddlChecked}
+                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-200"
+                  style={{
+                    background: !ddlChecked ? "rgba(14,165,233,0.3)" : "#0ea5e9",
+                    color: !ddlChecked ? "#64748b" : "#fff",
+                    cursor: !ddlChecked ? "not-allowed" : "pointer",
+                    boxShadow: ddlChecked ? "0 4px 14px rgba(14,165,233,0.3)" : "none",
+                  }}>
+                  ✅ 승인 (100% 프로덕션 전환)
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </section>
 
       {/* Pod 리소스 (접이식) */}
