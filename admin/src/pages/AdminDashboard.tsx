@@ -1494,24 +1494,6 @@ function CanaryStatusPanel({
             })}
           </div>
         )}
-        <div className="flex items-center gap-4 pt-1 flex-wrap">
-          <a href="http://argo-rollouts-dashboard.fiveline.store" target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-sm font-semibold transition-colors" style={{ color: "#0ea5e9" }}>
-            ↗ Argo Rollouts
-          </a>
-          <span style={{ color: "#e2e8f0" }}>·</span>
-          <a href={`${GRAFANA_URL}/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-namespace=fiveline`}
-            target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-sm font-semibold transition-colors" style={{ color: "#0ea5e9" }}>
-            ↗ Grafana 네임스페이스
-          </a>
-          <span style={{ color: "#e2e8f0" }}>·</span>
-          <a href={`${GRAFANA_URL}/d/efa86fd1d0c121a26444b636a3f509a8/kubernetes-compute-resources-cluster?orgId=1`}
-            target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-sm font-semibold transition-colors" style={{ color: "#0ea5e9" }}>
-            ↗ Grafana 클러스터
-          </a>
-        </div>
       </section>)}
 
       {/* ══ SECTION 4: AIOps Co-pilot & Actions ══ */}
@@ -1613,6 +1595,26 @@ function CanaryStatusPanel({
           </div>
         )}
       </section>
+
+      {/* 외부 대시보드 링크 (항상 표시) */}
+      <div className="flex items-center gap-4 px-1 flex-wrap">
+        <a href="http://argo-rollouts-dashboard.fiveline.store" target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-sm font-semibold transition-colors" style={{ color: "#0ea5e9" }}>
+          ↗ Argo Rollouts
+        </a>
+        <span style={{ color: "#d1d5db" }}>·</span>
+        <a href={`${GRAFANA_URL}/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-namespace=fiveline`}
+          target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-sm font-semibold transition-colors" style={{ color: "#0ea5e9" }}>
+          ↗ Grafana 네임스페이스
+        </a>
+        <span style={{ color: "#d1d5db" }}>·</span>
+        <a href={`${GRAFANA_URL}/d/efa86fd1d0c121a26444b636a3f509a8/kubernetes-compute-resources-cluster?orgId=1`}
+          target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-sm font-semibold transition-colors" style={{ color: "#0ea5e9" }}>
+          ↗ Grafana 클러스터
+        </a>
+      </div>
 
       {/* Pod 리소스 (접이식) */}
       {podMetrics && podMetrics.pods.length > 0 && (
